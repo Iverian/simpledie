@@ -10,9 +10,7 @@ use num::{BigUint, ToPrimitive};
 use rand::RngCore;
 use thiserror::Error;
 
-const MIN_ITERATIONS: usize = 10_000;
-const MAX_ITERATIONS: usize = 100_000_000;
-const PRECISION: f64 = 1e-6;
+const SAMPLE_SIZE: usize = 10_000_000;
 
 type Count = BigUint;
 type DieMap<K, V> = BTreeMap<K, V>;
@@ -30,9 +28,7 @@ pub struct Approximator<'a, G>
 where
     G: RngCore,
 {
-    min_iterations: usize,
-    max_iterations: usize,
-    precision: f64,
+    sample_size: usize,
     rng: &'a mut G,
 }
 
@@ -276,23 +272,29 @@ where
 {
     pub fn new(rng: &'a mut G) -> Self {
         Self {
-            min_iterations: MIN_ITERATIONS,
-            max_iterations: MAX_ITERATIONS,
-            precision: PRECISION,
+            sample_size: SAMPLE_SIZE,
             rng,
         }
     }
 
-    pub fn build<K, F>(&mut self, mut op: F) -> Result<Die<K>, K>
+    pub fn sample_size(&self) -> usize {
+        self.sample_size
+    }
+
+    pub fn set_sample_size(mut self, value: usize) -> Self {
+        assert_ne!(value, 0);
+        self.sample_size = value;
+        self
+    }
+
+    pub fn build<K, F>(&mut self, mut op: F) -> Die<K>
     where
         F: FnMut(&mut G) -> K,
-        K: TryInto<f64, Error: Clone + Debug> + Ord + Copy,
+        K: Ord + Copy,
     {
         let mut outcomes = DieMap::new();
-        let mut sum = 0.0;
-        for _ in 0..self.min_iterations {
-            let k = op(self.rng);
-            match outcomes.entry(k) {
+        for _ in 0..self.sample_size {
+            match outcomes.entry(op(self.rng)) {
                 Entry::Vacant(e) => {
                     e.insert(1u64);
                 }
@@ -300,40 +302,20 @@ where
                     *e.get_mut() += 1;
                 }
             }
-            sum += k.try_into().map_err(|e| Error::Float(e))?;
         }
-        let mut pa = sum / (self.min_iterations as f64);
-        for i in (self.min_iterations + 1)..self.max_iterations {
-            let k = op(self.rng);
-            match outcomes.entry(k) {
-                Entry::Vacant(e) => {
-                    e.insert(1u64);
-                }
-                Entry::Occupied(mut e) => {
-                    *e.get_mut() += 1;
-                }
-            }
-            sum += k.try_into().map_err(|e| Error::Float(e))?;
-            let a = sum / (i as f64);
-            if (a - pa).abs() < self.precision {
-                return Ok(Self::convert(outcomes, i));
-            }
-            pa = a;
-        }
-        Ok(Self::convert(outcomes, MAX_ITERATIONS))
+        Self::convert(outcomes, SAMPLE_SIZE)
     }
 
     fn convert<K>(outcomes: DieMap<K, u64>, denom: usize) -> Die<K>
     where
         K: Ord + Copy,
     {
-        let denom = denom.to_biguint().unwrap();
-        Die::<K> {
-            outcomes: outcomes
+        Die::new(
+            denom.to_biguint().unwrap(),
+            outcomes
                 .into_iter()
                 .map(|(k, v)| (k, v.to_biguint().unwrap()))
                 .collect(),
-            denom,
-        }
+        )
     }
 }
