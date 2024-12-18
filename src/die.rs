@@ -1,3 +1,4 @@
+use std::borrow::Borrow;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
@@ -90,14 +91,19 @@ where
         Die::<U>::from_map(self.denom.clone(), outcomes)
     }
 
-    pub fn combine<F, U>(dice: &[&Self], op: F) -> Die<U>
+    pub fn combine<F, U, Q>(dice: &[Q], op: F) -> Die<U>
     where
         F: Fn(&[K]) -> U,
         U: Ord + Copy,
+        Q: Borrow<Self>,
     {
         let mut outcomes = DieMap::<U, _>::new();
         let mut key = Vec::with_capacity(dice.len());
-        for p in dice.iter().map(|x| &x.outcomes).multi_cartesian_product() {
+        for p in dice
+            .iter()
+            .map(|x| &x.borrow().outcomes)
+            .multi_cartesian_product()
+        {
             let mut count = Count::one();
             key.clear();
             for (k, c) in p {
@@ -114,17 +120,20 @@ where
             }
         }
         Die::<U>::from_map(
-            dice.iter().fold(Count::one(), |acc, x| acc * &x.denom),
+            dice.iter()
+                .fold(Count::one(), |acc, x| acc * &x.borrow().denom),
             outcomes,
         )
     }
 
-    pub fn combine_with<F, T, U>(&self, other: &Die<T>, op: F) -> Die<U>
+    pub fn combine_with<F, T, U, Q>(&self, other: Q, op: F) -> Die<U>
     where
         F: Fn(K, T) -> U,
         T: Copy,
         U: Ord + Copy,
+        Q: Borrow<Die<T>>,
     {
+        let other = other.borrow();
         let mut outcomes = DieMap::<U, _>::new();
         for (k1, c1) in &self.outcomes {
             for (k2, c2) in &other.outcomes {
