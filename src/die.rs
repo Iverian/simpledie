@@ -2,13 +2,13 @@ use std::borrow::Borrow;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
-use std::ops::{Add, Mul, Sub};
+use std::ops::{Add, Div, Mul, Sub};
 
 use itertools::Itertools;
 use num::bigint::{RandBigInt, ToBigUint};
 use num::rational::Ratio;
 use num::traits::One;
-use num::{BigUint, ToPrimitive};
+use num::{BigUint, Integer, ToPrimitive};
 use rand::RngCore;
 use thiserror::Error;
 
@@ -97,6 +97,14 @@ impl<K> Die<K> {
         T: From<K>,
     {
         self.biect_map(Into::into)
+    }
+
+    pub fn try_cast<T>(self) -> core::result::Result<Die<T>, <T as TryFrom<K>>::Error>
+    where
+        T: TryFrom<K>,
+        <T as TryFrom<K>>::Error: Clone + Debug,
+    {
+        self.try_biect_map(TryInto::try_into)
     }
 
     pub fn sample<G>(&self, rng: &mut G) -> &K
@@ -206,6 +214,22 @@ impl<K> Die<K> {
         Die::<U>::from_map(&self.denom * &other.denom, outcomes)
     }
 
+    pub(crate) fn try_biect_map<F, U, E>(self, op: F) -> core::result::Result<Die<U>, E>
+    where
+        F: Fn(K) -> core::result::Result<U, E>,
+        E: Clone + Debug,
+    {
+        Ok(Die::<U> {
+            denom: self.denom,
+            keys: self
+                .keys
+                .into_iter()
+                .map(op)
+                .collect::<core::result::Result<Vec<_>, _>>()?,
+            outcomes: self.outcomes,
+        })
+    }
+
     pub(crate) fn biect_map<F, U>(self, op: F) -> Die<U>
     where
         F: Fn(K) -> U,
@@ -218,16 +242,18 @@ impl<K> Die<K> {
     }
 
     fn from_map(denom: Count, value: DieMap<K, Count>) -> Self {
+        let mut gcd = denom.clone();
         let mut keys = Vec::with_capacity(value.len());
         let mut outcomes = Vec::with_capacity(value.len());
         for (k, v) in value {
+            gcd = gcd.gcd(&v);
             keys.push(k);
             outcomes.push(v);
         }
         Self {
-            denom,
+            denom: denom / &gcd,
             keys,
-            outcomes,
+            outcomes: outcomes.into_iter().map(|x| x / &gcd).collect(),
         }
     }
 
@@ -354,6 +380,64 @@ where
 
 impl<K> Die<K>
 where
+    K: Eq,
+{
+    pub fn eq<T>(self, value: T) -> Die<bool>
+    where
+        T: Into<K>,
+    {
+        let value = value.into();
+        self.map(|x| x == value)
+    }
+
+    pub fn ne<T>(self, value: T) -> Die<bool>
+    where
+        T: Into<K>,
+    {
+        let value = value.into();
+        self.map(|x| x != value)
+    }
+}
+
+impl<K> Die<K>
+where
+    K: Ord,
+{
+    pub fn lt<T>(self, value: T) -> Die<bool>
+    where
+        T: Into<K>,
+    {
+        let value = value.into();
+        self.map(|x| x < value)
+    }
+
+    pub fn gt<T>(self, value: T) -> Die<bool>
+    where
+        T: Into<K>,
+    {
+        let value = value.into();
+        self.map(|x| x > value)
+    }
+
+    pub fn le<T>(self, value: T) -> Die<bool>
+    where
+        T: Into<K>,
+    {
+        let value = value.into();
+        self.map(|x| x <= value)
+    }
+
+    pub fn ge<T>(self, value: T) -> Die<bool>
+    where
+        T: Into<K>,
+    {
+        let value = value.into();
+        self.map(|x| x >= value)
+    }
+}
+
+impl<K> Die<K>
+where
     K: Clone + Ord,
 {
     pub fn max(&self, rhs: &Self) -> Self {
@@ -379,6 +463,41 @@ where
 {
     pub fn sum_of(&self, count: usize) -> Self {
         self.repeat(count, |x, y| *x + *y)
+    }
+}
+
+impl<K> Die<K> {
+    pub fn shift<T>(self, value: T) -> Die<<T as Add<K>>::Output>
+    where
+        T: Copy + Add<K>,
+    {
+        self.biect_map(move |x| value + x)
+    }
+
+    pub fn kmul<T>(self, value: T) -> Die<<T as Mul<K>>::Output>
+    where
+        T: Copy + Mul<K>,
+    {
+        self.biect_map(move |x| value * x)
+    }
+
+    pub fn kdiv<T>(self, value: T) -> Die<<K as Div<T>>::Output>
+    where
+        T: Copy,
+        K: Div<T>,
+        <K as Div<T>>::Output: Ord,
+    {
+        self.map(move |x| x / value)
+    }
+}
+
+impl<K> Die<K>
+where
+    K: TryInto<f64>,
+    <K as TryInto<f64>>::Error: Clone + Debug,
+{
+    pub fn fdiv(self, value: f64) -> core::result::Result<Die<f64>, <K as TryInto<f64>>::Error> {
+        self.try_biect_map(|x| x.try_into().map(|y| y / value))
     }
 }
 
