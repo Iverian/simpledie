@@ -47,6 +47,7 @@ where
 pub type Result<T, K> = core::result::Result<T, Error<K>>;
 
 impl<K> Die<K> {
+    #[must_use]
     pub fn new(values: Vec<(K, u64)>) -> Self {
         let mut denom = BigUint::ZERO;
         let mut keys = Vec::with_capacity(values.len());
@@ -67,6 +68,7 @@ impl<K> Die<K> {
         }
     }
 
+    #[must_use]
     pub fn uniform_values(keys: Vec<K>) -> Self {
         let c = Count::one();
         let n = keys.len();
@@ -115,6 +117,7 @@ impl<K> Die<K> {
         unreachable!()
     }
 
+    #[must_use]
     pub fn probabilities<T>(self) -> Option<Vec<(T, f64)>>
     where
         T: From<K>,
@@ -265,6 +268,7 @@ impl<K> Die<K>
 where
     K: Ord + Clone,
 {
+    #[must_use]
     pub fn repeat<F>(&self, count: usize, op: F) -> Self
     where
         F: Fn(&K, &K) -> K + Copy,
@@ -279,6 +283,7 @@ where
         result
     }
 
+    #[must_use]
     pub fn mode(&self) -> Vec<&K> {
         self.zip()
             .max_set_by(|(_, x), (_, y)| x.cmp(y))
@@ -306,7 +311,7 @@ where
     }
 
     pub fn stddev(&self) -> Result<f64, K> {
-        self.variance().map(|x| x.sqrt())
+        self.variance().map(f64::sqrt)
     }
 
     fn map_mean(k: K, c: Count, d: Count) -> Result<f64, K> {
@@ -326,8 +331,9 @@ where
     }
 }
 
-impl Die<i32> {
-    pub fn uniform(size: i32) -> Self {
+impl Die<u32> {
+    #[must_use]
+    pub fn uniform(size: u32) -> Self {
         Self {
             denom: size.to_biguint().unwrap(),
             keys: (1..=size).collect(),
@@ -354,7 +360,7 @@ where
             let kc: bool = kc.clone().into();
             for (k1, c1) in lhs.zip() {
                 for (k2, c2) in rhs.zip() {
-                    let kk = if kc { k1.clone() } else { k2.clone() };
+                    let kk = (if kc { k1 } else { k2 }).clone();
                     match outcomes.entry(kk) {
                         Entry::Vacant(e) => {
                             e.insert(cc * c1 * c2);
@@ -433,18 +439,22 @@ impl<K> Die<K>
 where
     K: Clone + Ord,
 {
+    #[must_use]
     pub fn max(&self, rhs: &Self) -> Self {
         self.combine_with(rhs, |x, y| x.max(y).clone())
     }
 
+    #[must_use]
     pub fn min(&self, rhs: &Self) -> Self {
         self.combine_with(rhs, |x, y| x.min(y).clone())
     }
 
+    #[must_use]
     pub fn max_of(&self, count: usize) -> Self {
         self.repeat(count, |x, y| x.max(y).clone())
     }
 
+    #[must_use]
     pub fn min_of(&self, count: usize) -> Self {
         self.repeat(count, |x, y| x.min(y).clone())
     }
@@ -454,6 +464,7 @@ impl<K> Die<K>
 where
     K: Copy + Ord + Add<K, Output = K>,
 {
+    #[must_use]
     pub fn sum_of(&self, count: usize) -> Self {
         self.repeat(count, |x, y| *x + *y)
     }
