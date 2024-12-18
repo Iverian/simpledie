@@ -113,12 +113,15 @@ impl<K> Die<K> {
         unreachable!()
     }
 
-    pub fn probabilities(self) -> Option<Vec<(K, f64)>> {
+    pub fn probabilities<T>(self) -> Option<Vec<(T, f64)>>
+    where
+        T: From<K>,
+    {
         Self::into_zip(self.keys, self.outcomes)
             .map(|(k, c)| {
-                Ratio::new(c.clone(), self.denom.clone())
+                Ratio::new(c, self.denom.clone())
                     .to_f64()
-                    .map(|x| (k, x))
+                    .map(|x| (k.into(), x))
             })
             .collect()
     }
