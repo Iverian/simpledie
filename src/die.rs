@@ -333,8 +333,8 @@ where
     }
 }
 
-impl Die<u32> {
-    pub fn uniform(size: u32) -> Self {
+impl Die<i32> {
+    pub fn uniform(size: i32) -> Self {
         Self {
             denom: size.to_biguint().unwrap(),
             keys: (1..=size).collect(),
