@@ -80,6 +80,7 @@ impl<K> Die<K> {
         }
     }
 
+    #[must_use]
     pub fn single(value: K) -> Self {
         Self {
             denom: Count::one(),
@@ -88,6 +89,7 @@ impl<K> Die<K> {
         }
     }
 
+    #[must_use]
     pub fn cast<T>(self) -> Die<T>
     where
         T: From<K>,
@@ -103,6 +105,7 @@ impl<K> Die<K> {
         self.try_biect_map(TryInto::try_into)
     }
 
+    #[must_use]
     pub fn sample<G>(&self, rng: &mut G) -> &K
     where
         G: RngCore,
@@ -132,6 +135,7 @@ impl<K> Die<K> {
             .collect()
     }
 
+    #[must_use]
     pub fn map<F, U>(self, op: F) -> Die<U>
     where
         F: Fn(K) -> U,
@@ -151,6 +155,7 @@ impl<K> Die<K> {
         Die::<U>::from_map(self.denom, outcomes)
     }
 
+    #[must_use]
     pub fn combine<F, U, Q, V>(dice: V, op: F) -> Die<U>
     where
         F: Fn(&[&K]) -> U,
@@ -188,6 +193,7 @@ impl<K> Die<K> {
         )
     }
 
+    #[must_use]
     pub fn combine_with<F, T, U, Q>(&self, other: Q, op: F) -> Die<U>
     where
         F: Fn(&K, &T) -> U,
@@ -227,6 +233,7 @@ impl<K> Die<K> {
         })
     }
 
+    #[must_use]
     pub(crate) fn biect_map<F, U>(self, op: F) -> Die<U>
     where
         F: Fn(K) -> U,
@@ -238,6 +245,7 @@ impl<K> Die<K> {
         }
     }
 
+    #[must_use]
     fn from_map(denom: Count, value: DieMap<K, Count>) -> Self {
         let mut gcd = denom.clone();
         let mut keys = Vec::with_capacity(value.len());
@@ -347,6 +355,7 @@ impl<T> Die<T>
 where
     T: Clone + Into<bool>,
 {
+    #[must_use]
     pub fn branch<K, U, V>(&self, lhs: U, rhs: V) -> Die<K>
     where
         K: Clone + Ord,
@@ -381,6 +390,7 @@ impl<K> Die<K>
 where
     K: Eq,
 {
+    #[must_use]
     pub fn eq<T>(self, value: T) -> Die<bool>
     where
         T: Into<K>,
@@ -389,6 +399,7 @@ where
         self.map(|x| x == value)
     }
 
+    #[must_use]
     pub fn ne<T>(self, value: T) -> Die<bool>
     where
         T: Into<K>,
@@ -402,6 +413,7 @@ impl<K> Die<K>
 where
     K: Ord,
 {
+    #[must_use]
     pub fn cmp<T>(self, value: T) -> Die<Ordering>
     where
         T: Into<K>,
@@ -410,6 +422,7 @@ where
         self.map(|x| x.cmp(&value))
     }
 
+    #[must_use]
     pub fn lt<T>(self, value: T) -> Die<bool>
     where
         T: Into<K>,
@@ -418,6 +431,7 @@ where
         self.map(|x| x < value)
     }
 
+    #[must_use]
     pub fn gt<T>(self, value: T) -> Die<bool>
     where
         T: Into<K>,
@@ -426,6 +440,7 @@ where
         self.map(|x| x > value)
     }
 
+    #[must_use]
     pub fn le<T>(self, value: T) -> Die<bool>
     where
         T: Into<K>,
@@ -434,6 +449,7 @@ where
         self.map(|x| x <= value)
     }
 
+    #[must_use]
     pub fn ge<T>(self, value: T) -> Die<bool>
     where
         T: Into<K>,
@@ -479,6 +495,7 @@ where
 }
 
 impl<K> Die<K> {
+    #[must_use]
     pub fn shift<T>(self, value: T) -> Die<<T as Add<K>>::Output>
     where
         T: Copy + Add<K>,
@@ -486,6 +503,7 @@ impl<K> Die<K> {
         self.biect_map(move |x| value + x)
     }
 
+    #[must_use]
     pub fn kmul<T>(self, value: T) -> Die<<T as Mul<K>>::Output>
     where
         T: Copy + Mul<K>,
@@ -493,6 +511,7 @@ impl<K> Die<K> {
         self.biect_map(move |x| value * x)
     }
 
+    #[must_use]
     pub fn kdiv<T>(self, value: T) -> Die<<K as Div<T>>::Output>
     where
         T: Copy,
@@ -517,6 +536,7 @@ impl<G> Approx<G>
 where
     G: RngCore,
 {
+    #[must_use]
     pub fn new(rng: G) -> Self {
         Self {
             sample_size: SAMPLE_SIZE,
@@ -533,6 +553,7 @@ where
         self.sample_size = value;
     }
 
+    #[must_use]
     pub fn build<K, F>(&mut self, mut op: F) -> Die<K>
     where
         F: FnMut(&mut G) -> K,
@@ -552,6 +573,7 @@ where
         Self::convert(outcomes, self.sample_size)
     }
 
+    #[must_use]
     pub fn throws<K, P, F>(&mut self, die: Die<K>, init: K, pred: P, op: F) -> Die<u32>
     where
         K: Clone,
