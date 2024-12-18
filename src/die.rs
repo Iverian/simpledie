@@ -1,4 +1,5 @@
 use std::borrow::Borrow;
+use std::cmp::Ordering;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
@@ -401,6 +402,14 @@ impl<K> Die<K>
 where
     K: Ord,
 {
+    pub fn cmp<T>(self, value: T) -> Die<Ordering>
+    where
+        T: Into<K>,
+    {
+        let value = value.into();
+        self.map(|x| x.cmp(&value))
+    }
+
     pub fn lt<T>(self, value: T) -> Die<bool>
     where
         T: Into<K>,
