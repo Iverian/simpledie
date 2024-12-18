@@ -360,8 +360,7 @@ where
             let kc: bool = kc.clone().into();
             for (k1, c1) in lhs.zip() {
                 for (k2, c2) in rhs.zip() {
-                    let kk = (if kc { k1 } else { k2 }).clone();
-                    match outcomes.entry(kk) {
+                    match outcomes.entry((if kc { k1 } else { k2 }).clone()) {
                         Entry::Vacant(e) => {
                             e.insert(cc * c1 * c2);
                         }
