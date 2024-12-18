@@ -2,4 +2,4 @@ mod defs;
 mod die;
 
 pub use defs::*;
-pub use die::{Approximator, Die, Error, Result};
+pub use die::{Approx, Die, Error, Result};

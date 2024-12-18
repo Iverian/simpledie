@@ -12,7 +12,7 @@ use num::{BigUint, Integer, ToPrimitive};
 use rand::RngCore;
 use thiserror::Error;
 
-const SAMPLE_SIZE: usize = 10_000_000;
+const SAMPLE_SIZE: u32 = 10_000_000;
 
 type Count = BigUint;
 type DieMap<K, V> = BTreeMap<K, V>;
@@ -24,12 +24,12 @@ pub struct Die<K> {
     outcomes: Vec<Count>,
 }
 
-pub struct Approximator<'a, G>
+pub struct Approx<G>
 where
     G: RngCore,
 {
-    sample_size: usize,
-    rng: &'a mut G,
+    sample_size: u32,
+    rng: G,
 }
 
 #[derive(Debug, Clone, Error)]
@@ -47,13 +47,6 @@ where
 pub type Result<T, K> = core::result::Result<T, Error<K>>;
 
 impl<K> Die<K> {
-    pub fn approx<G>(rng: &mut G) -> Approximator<'_, G>
-    where
-        G: RngCore,
-    {
-        Approximator::new(rng)
-    }
-
     pub fn new(values: Vec<(K, u64)>) -> Self {
         let mut denom = BigUint::ZERO;
         let mut keys = Vec::with_capacity(values.len());
@@ -115,7 +108,7 @@ impl<K> Die<K> {
         let mut pos = BigUint::ZERO;
         for (k, c) in self.zip() {
             pos += c;
-            if &v < c {
+            if v < pos {
                 return k;
             }
         }
@@ -501,57 +494,78 @@ where
     }
 }
 
-impl<'a, G> Approximator<'a, G>
+impl<G> Approx<G>
 where
     G: RngCore,
 {
-    pub fn new(rng: &'a mut G) -> Self {
+    pub fn new(rng: G) -> Self {
         Self {
             sample_size: SAMPLE_SIZE,
             rng,
         }
     }
 
-    pub fn sample_size(&self) -> usize {
+    pub fn sample_size(&self) -> u32 {
         self.sample_size
     }
 
-    pub fn set_sample_size(mut self, value: usize) -> Self {
+    pub fn set_sample_size(&mut self, value: u32) {
         assert_ne!(value, 0);
         self.sample_size = value;
-        self
     }
 
     pub fn build<K, F>(&mut self, mut op: F) -> Die<K>
     where
         F: FnMut(&mut G) -> K,
-        K: Ord + Copy,
+        K: Ord,
     {
         let mut outcomes = DieMap::new();
         for _ in 0..self.sample_size {
-            match outcomes.entry(op(self.rng)) {
+            match outcomes.entry(op(&mut self.rng)) {
                 Entry::Vacant(e) => {
-                    e.insert(1u64);
+                    e.insert(1u32);
                 }
                 Entry::Occupied(mut e) => {
                     *e.get_mut() += 1;
                 }
             }
         }
-        Self::convert(outcomes, SAMPLE_SIZE)
+        Self::convert(outcomes, self.sample_size)
     }
 
-    fn convert<K>(outcomes: DieMap<K, u64>, denom: usize) -> Die<K>
+    pub fn throws<K, P, F>(&mut self, die: Die<K>, init: K, pred: P, op: F) -> Die<u32>
     where
-        K: Ord + Copy,
+        K: Clone,
+        P: Fn(&K) -> bool,
+        F: Fn(&K, &K) -> K,
     {
+        let ss = self.sample_size;
+        self.build(move |g| {
+            let mut value = init.clone();
+            for i in 0..ss {
+                value = op(&value, die.sample(g));
+                if !pred(&value) {
+                    return i;
+                }
+            }
+            ss
+        })
+    }
+
+    fn convert<K>(value: DieMap<K, u32>, denom: u32) -> Die<K>
+    where
+        K: Ord,
+    {
+        let mut keys = Vec::with_capacity(value.len());
+        let mut outcomes = Vec::with_capacity(value.len());
+        for (k, v) in value {
+            keys.push(k);
+            outcomes.push(v.to_biguint().unwrap());
+        }
         Die {
             denom: denom.to_biguint().unwrap(),
-            keys: outcomes.keys().copied().collect(),
-            outcomes: outcomes
-                .into_values()
-                .map(|x| x.to_biguint().unwrap())
-                .collect(),
+            keys,
+            outcomes,
         }
     }
 }
