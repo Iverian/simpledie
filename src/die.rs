@@ -230,7 +230,7 @@ where
     fn map_variance(m: f64, k: K, c: Count, d: Count) -> Result<f64, K> {
         let kk: f64 = k.try_into().map_err(|e| Error::Float(e))?;
         let cc = Ratio::new_raw(c, d).to_f64().ok_or(Error::Overflow)?;
-        Ok((kk - m) * cc)
+        Ok((kk - m).powi(2) * cc)
     }
 
     fn sum(acc: Result<f64, K>, x: Result<f64, K>) -> Result<f64, K> {
