@@ -1,7 +1,6 @@
 use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::ops::{Add, Div, Mul, Sub};
 
@@ -9,28 +8,17 @@ use itertools::Itertools;
 use num::bigint::{RandBigInt, ToBigUint};
 use num::rational::Ratio;
 use num::traits::One;
-use num::{BigUint, Integer, ToPrimitive};
+use num::{BigUint, ToPrimitive};
 use rand::RngCore;
 use thiserror::Error;
 
-const SAMPLE_SIZE: u32 = 10_000_000;
-
-type Count = BigUint;
-type DieMap<K, V> = BTreeMap<K, V>;
+use crate::util::{Count, DieMap};
 
 #[derive(Debug, Clone)]
 pub struct Die<K> {
     denom: Count,
     keys: Vec<K>,
     outcomes: Vec<Count>,
-}
-
-pub struct Approx<G>
-where
-    G: RngCore,
-{
-    sample_size: u32,
-    rng: G,
 }
 
 #[derive(Debug, Clone, Error)]
@@ -61,6 +49,40 @@ impl<K> Die<K> {
             denom += &c;
             keys.push(k);
             outcomes.push(c);
+        }
+        Self {
+            denom,
+            keys,
+            outcomes,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn from_map<T, R>(denom: R, value: DieMap<K, T>) -> Self
+    where
+        T: ToBigUint,
+        R: Borrow<T>,
+    {
+        let mut keys = Vec::with_capacity(value.len());
+        let mut outcomes = Vec::with_capacity(value.len());
+        for (k, v) in value {
+            keys.push(k);
+            outcomes.push(v.to_biguint().unwrap());
+        }
+        Self {
+            denom: denom.borrow().to_biguint().unwrap(),
+            keys,
+            outcomes,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn from_raw_map(denom: Count, value: DieMap<K, Count>) -> Self {
+        let mut keys = Vec::with_capacity(value.len());
+        let mut outcomes = Vec::with_capacity(value.len());
+        for (k, v) in value {
+            keys.push(k);
+            outcomes.push(v);
         }
         Self {
             denom,
@@ -152,7 +174,7 @@ impl<K> Die<K> {
                 }
             }
         }
-        Die::<U>::from_map(self.denom, outcomes)
+        Die::<U>::from_raw_map(self.denom, outcomes)
     }
 
     #[must_use]
@@ -186,7 +208,7 @@ impl<K> Die<K> {
                 }
             }
         }
-        Die::<U>::from_map(
+        Die::<U>::from_raw_map(
             dice.iter()
                 .fold(Count::one(), |acc, x| acc * &x.borrow().denom),
             outcomes,
@@ -214,7 +236,7 @@ impl<K> Die<K> {
                 }
             }
         }
-        Die::<U>::from_map(&self.denom * &other.denom, outcomes)
+        Die::<U>::from_raw_map(&self.denom * &other.denom, outcomes)
     }
 
     pub(crate) fn try_biect_map<F, U, E>(self, op: F) -> core::result::Result<Die<U>, E>
@@ -242,23 +264,6 @@ impl<K> Die<K> {
             denom: self.denom,
             keys: self.keys.into_iter().map(op).collect(),
             outcomes: self.outcomes,
-        }
-    }
-
-    #[must_use]
-    fn from_map(denom: Count, value: DieMap<K, Count>) -> Self {
-        let mut gcd = denom.clone();
-        let mut keys = Vec::with_capacity(value.len());
-        let mut outcomes = Vec::with_capacity(value.len());
-        for (k, v) in value {
-            gcd = gcd.gcd(&v);
-            keys.push(k);
-            outcomes.push(v);
-        }
-        Self {
-            denom: denom / &gcd,
-            keys,
-            outcomes: outcomes.into_iter().map(|x| x / &gcd).collect(),
         }
     }
 
@@ -309,14 +314,14 @@ where
     pub fn mean(&self) -> Result<f64, K> {
         self.zip()
             .map(|(k, c)| Self::map_mean(*k, c.clone(), self.denom.clone()))
-            .fold(Ok(0.0), Self::sum)
+            .fold(Ok(0.0), Self::acc_sum)
     }
 
     pub fn variance(&self) -> Result<f64, K> {
         let m = self.mean()?;
         self.zip()
             .map(|(k, c)| Self::map_variance(m, *k, c.clone(), self.denom.clone()))
-            .fold(Ok(0.0), Self::sum)
+            .fold(Ok(0.0), Self::acc_sum)
     }
 
     pub fn stddev(&self) -> Result<f64, K> {
@@ -335,7 +340,7 @@ where
         Ok((kk - m).powi(2) * cc)
     }
 
-    fn sum(acc: Result<f64, K>, x: Result<f64, K>) -> Result<f64, K> {
+    fn acc_sum(acc: Result<f64, K>, x: Result<f64, K>) -> Result<f64, K> {
         Ok(acc? + x?)
     }
 }
@@ -382,7 +387,7 @@ where
             }
         }
 
-        Die::<K>::from_map(&self.denom * &lhs.denom * &rhs.denom, outcomes)
+        Die::<K>::from_raw_map(&self.denom * &lhs.denom * &rhs.denom, outcomes)
     }
 }
 
@@ -494,6 +499,20 @@ where
     }
 }
 
+impl<K> Die<K>
+where
+    K: Clone,
+{
+    pub fn sum<V, U>(&self, rhs: U) -> Die<<K as Add<V>>::Output>
+    where
+        V: Clone,
+        K: Add<V, Output: Clone + Ord>,
+        U: Borrow<Die<V>>,
+    {
+        self.combine_with(rhs, |x, y| x.clone() + y.clone())
+    }
+}
+
 impl<K> Die<K> {
     #[must_use]
     pub fn shift<T>(self, value: T) -> Die<<T as Add<K>>::Output>
@@ -529,85 +548,6 @@ where
 {
     pub fn fdiv(self, value: f64) -> core::result::Result<Die<f64>, <K as TryInto<f64>>::Error> {
         self.try_biect_map(|x| x.try_into().map(|y| y / value))
-    }
-}
-
-impl<G> Approx<G>
-where
-    G: RngCore,
-{
-    #[must_use]
-    pub fn new(rng: G) -> Self {
-        Self {
-            sample_size: SAMPLE_SIZE,
-            rng,
-        }
-    }
-
-    pub fn sample_size(&self) -> u32 {
-        self.sample_size
-    }
-
-    pub fn set_sample_size(&mut self, value: u32) {
-        assert_ne!(value, 0);
-        self.sample_size = value;
-    }
-
-    #[must_use]
-    pub fn build<K, F>(&mut self, mut op: F) -> Die<K>
-    where
-        F: FnMut(&mut G) -> K,
-        K: Ord,
-    {
-        let mut outcomes = DieMap::new();
-        for _ in 0..self.sample_size {
-            match outcomes.entry(op(&mut self.rng)) {
-                Entry::Vacant(e) => {
-                    e.insert(1u32);
-                }
-                Entry::Occupied(mut e) => {
-                    *e.get_mut() += 1;
-                }
-            }
-        }
-        Self::convert(outcomes, self.sample_size)
-    }
-
-    #[must_use]
-    pub fn throws<K, P, F>(&mut self, die: Die<K>, init: K, pred: P, op: F) -> Die<u32>
-    where
-        K: Clone,
-        P: Fn(&K) -> bool,
-        F: Fn(&K, &K) -> K,
-    {
-        let ss = self.sample_size;
-        self.build(move |g| {
-            let mut value = init.clone();
-            for i in 0..ss {
-                value = op(&value, die.sample(g));
-                if !pred(&value) {
-                    return i;
-                }
-            }
-            ss
-        })
-    }
-
-    fn convert<K>(value: DieMap<K, u32>, denom: u32) -> Die<K>
-    where
-        K: Ord,
-    {
-        let mut keys = Vec::with_capacity(value.len());
-        let mut outcomes = Vec::with_capacity(value.len());
-        for (k, v) in value {
-            keys.push(k);
-            outcomes.push(v.to_biguint().unwrap());
-        }
-        Die {
-            denom: denom.to_biguint().unwrap(),
-            keys,
-            outcomes,
-        }
     }
 }
 

@@ -1,6 +1,6 @@
 use once_cell::sync::Lazy;
 
-use crate::Die;
+use crate::die::Die;
 
 pub static D0: Lazy<Die<u32>> = Lazy::new(|| Die::single(0));
 pub static D2: Lazy<Die<u32>> = Lazy::new(|| Die::uniform(2));
