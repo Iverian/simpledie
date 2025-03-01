@@ -143,17 +143,17 @@ where
     K: Clone + Into<bool>,
 {
     #[must_use]
-    pub fn bool_any(&self) -> Die<bool> {
+    pub fn any(&self) -> Die<bool> {
         self.combine(|x| x.iter().any(|&x| x.clone().into()))
     }
 
     #[must_use]
-    pub fn bool_all(&self) -> Die<bool> {
+    pub fn all(&self) -> Die<bool> {
         self.combine(|x| x.iter().all(|&x| x.clone().into()))
     }
 
     #[must_use]
-    pub fn bool_count(&self) -> Die<usize> {
+    pub fn count(&self) -> Die<usize> {
         self.combine(|x| x.iter().filter(|&&x| x.clone().into()).count())
     }
 }
