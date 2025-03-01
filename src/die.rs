@@ -12,6 +12,7 @@ use num::{BigUint, ToPrimitive};
 use rand::RngCore;
 use thiserror::Error;
 
+use crate::die_list::DieList;
 use crate::util::{Count, DieMap};
 
 #[derive(Debug, Clone)]
@@ -276,7 +277,15 @@ impl<K> Die<K> {
     }
 }
 
-impl<K> Die<K> where K: Copy {}
+impl<K> Die<K>
+where
+    K: Clone,
+{
+    #[must_use]
+    pub fn list(self, count: usize) -> DieList<K> {
+        DieList::repeat(count, self)
+    }
+}
 
 impl<K> Die<K>
 where
@@ -345,12 +354,12 @@ where
     }
 }
 
-impl Die<u32> {
+impl Die<i32> {
     #[must_use]
-    pub fn uniform(size: u32) -> Self {
+    pub fn uniform(size: u16) -> Self {
         Self {
             denom: size.to_biguint().unwrap(),
-            keys: (1..=size).collect(),
+            keys: (1..=i32::from(size)).collect(),
             outcomes: vec![Count::one(); size as usize],
         }
     }
