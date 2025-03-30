@@ -6,19 +6,15 @@ use std::iter::Sum;
 use std::ops::{Add, Div, Mul, Sub};
 
 use itertools::Itertools;
-use num::bigint::{RandBigInt, ToBigUint};
 use num::rational::Ratio;
 use num::traits::One;
-use num::{BigUint, FromPrimitive, ToPrimitive};
-use once_cell::sync::Lazy;
-use rand::{thread_rng, RngCore};
+use num::ToPrimitive;
+use rand::{thread_rng, Rng, RngCore};
 use thiserror::Error;
 
 use crate::approx::Approx;
 use crate::die_list::DieList;
-use crate::util::{Count, DieMap};
-
-static RAW_LIMIT: Lazy<BigUint> = Lazy::new(|| BigUint::from_u32(10_000_000).unwrap());
+use crate::util::{Count, DieMap, SAMPLE_SIZE};
 
 #[derive(Debug, Clone)]
 pub struct Die<K> {
@@ -43,16 +39,15 @@ pub type Result<T, K> = core::result::Result<T, Error<K>>;
 
 impl<K> Die<K> {
     #[must_use]
-    pub fn new(values: Vec<(K, u64)>) -> Self {
-        let mut denom = BigUint::ZERO;
+    pub fn new(values: Vec<(K, Count)>) -> Self {
+        let mut denom = 0;
         let mut keys = Vec::with_capacity(values.len());
         let mut outcomes = Vec::with_capacity(values.len());
         for (k, c) in values {
             if c == 0 {
                 continue;
             }
-            let c = c.to_biguint().unwrap();
-            denom += &c;
+            denom += c;
             keys.push(k);
             outcomes.push(c);
         }
@@ -64,19 +59,18 @@ impl<K> Die<K> {
     }
 
     #[must_use]
-    pub(crate) fn from_map<T, R>(denom: R, value: DieMap<K, T>) -> Self
+    pub(crate) fn from_map<T>(denom: T, value: DieMap<K, T>) -> Self
     where
-        T: ToBigUint,
-        R: Borrow<T>,
+        T: Into<Count>,
     {
         let mut keys = Vec::with_capacity(value.len());
         let mut outcomes = Vec::with_capacity(value.len());
         for (k, v) in value {
             keys.push(k);
-            outcomes.push(v.to_biguint().unwrap());
+            outcomes.push(v.into());
         }
         Self {
-            denom: denom.borrow().to_biguint().unwrap(),
+            denom: denom.into(),
             keys,
             outcomes,
         }
@@ -102,7 +96,7 @@ impl<K> Die<K> {
         let c = Count::one();
         let n = keys.len();
         Self {
-            denom: n.to_biguint().unwrap(),
+            denom: Count::try_from(n).unwrap(),
             keys,
             outcomes: vec![c; n],
         }
@@ -138,8 +132,8 @@ impl<K> Die<K> {
     where
         G: RngCore,
     {
-        let v = rng.gen_biguint_range(&BigUint::ZERO, &self.denom);
-        let mut pos = BigUint::ZERO;
+        let v = rng.gen_range(0u64..self.denom);
+        let mut pos = 0;
         for (k, c) in self.zip() {
             pos += c;
             if v < pos {
@@ -155,11 +149,7 @@ impl<K> Die<K> {
         T: From<K>,
     {
         Self::into_zip(self.keys, self.outcomes)
-            .map(|(k, c)| {
-                Ratio::new(c, self.denom.clone())
-                    .to_f64()
-                    .map(|x| (k.into(), x))
-            })
+            .map(|(k, c)| Ratio::new(c, self.denom).to_f64().map(|x| (k.into(), x)))
             .collect()
     }
 
@@ -194,8 +184,8 @@ impl<K> Die<K> {
         let denom = dice
             .borrow()
             .iter()
-            .fold(Count::one(), |acc, x| acc * &x.borrow().denom);
-        if denom < *RAW_LIMIT {
+            .fold(Count::one(), |acc, x| acc * x.borrow().denom);
+        if denom < Count::from(SAMPLE_SIZE) {
             Self::combine_raw(denom, dice, op)
         } else {
             Self::combine_approx(dice, op)
@@ -218,7 +208,7 @@ impl<K> Die<K> {
     }
 
     #[must_use]
-    fn combine_raw<F, U, Q, V>(denom: BigUint, dice: V, op: F) -> Die<U>
+    fn combine_raw<F, U, Q, V>(denom: Count, dice: V, op: F) -> Die<U>
     where
         F: Fn(&[&K]) -> U,
         U: Ord,
@@ -258,8 +248,8 @@ impl<K> Die<K> {
         U: Ord,
         Q: Borrow<Die<T>>,
     {
-        let denom = &self.denom * &other.borrow().denom;
-        if denom < *RAW_LIMIT {
+        let denom = self.denom * other.borrow().denom;
+        if denom < Count::from(SAMPLE_SIZE) {
             self.combine_with_raw(denom, other, op)
         } else {
             self.combine_with_approx(other, op)
@@ -282,7 +272,7 @@ impl<K> Die<K> {
     }
 
     #[must_use]
-    fn combine_with_raw<F, T, U, Q>(&self, denom: BigUint, other: Q, op: F) -> Die<U>
+    fn combine_with_raw<F, T, U, Q>(&self, denom: Count, other: Q, op: F) -> Die<U>
     where
         F: Fn(&K, &T) -> U,
         U: Ord,
@@ -333,11 +323,11 @@ impl<K> Die<K> {
         }
     }
 
-    fn into_zip(keys: Vec<K>, outcomes: Vec<Count>) -> impl Iterator<Item = (K, BigUint)> {
+    fn into_zip(keys: Vec<K>, outcomes: Vec<Count>) -> impl Iterator<Item = (K, Count)> {
         keys.into_iter().zip(outcomes)
     }
 
-    fn zip(&self) -> impl Iterator<Item = (&K, &BigUint)> + Clone {
+    fn zip(&self) -> impl Iterator<Item = (&K, &Count)> + Clone {
         self.keys.iter().zip(self.outcomes.iter())
     }
 }
@@ -372,14 +362,14 @@ where
 {
     pub fn mean(&self) -> Result<f64, K> {
         self.zip()
-            .map(|(k, c)| Self::map_mean(*k, c.clone(), self.denom.clone()))
+            .map(|(k, c)| Self::map_mean(*k, *c, self.denom))
             .fold(Ok(0.0), Self::acc_sum)
     }
 
     pub fn variance(&self) -> Result<f64, K> {
         let m = self.mean()?;
         self.zip()
-            .map(|(k, c)| Self::map_variance(m, *k, c.clone(), self.denom.clone()))
+            .map(|(k, c)| Self::map_variance(m, *k, *c, self.denom))
             .fold(Ok(0.0), Self::acc_sum)
     }
 
@@ -408,7 +398,7 @@ impl Die<i32> {
     #[must_use]
     pub fn uniform(size: u16) -> Self {
         Self {
-            denom: size.to_biguint().unwrap(),
+            denom: Count::from(size),
             keys: (1..=i32::from(size)).collect(),
             outcomes: vec![Count::one(); size as usize],
         }
@@ -426,8 +416,8 @@ where
         U: Borrow<Die<K>>,
         V: Borrow<Die<K>>,
     {
-        let denom = &self.denom * &lhs.borrow().denom * &rhs.borrow().denom;
-        if denom < *RAW_LIMIT {
+        let denom = self.denom * lhs.borrow().denom * rhs.borrow().denom;
+        if denom < Count::from(SAMPLE_SIZE) {
             self.branch_raw(denom, lhs, rhs)
         } else {
             self.branch_approx(lhs, rhs)
@@ -450,7 +440,7 @@ where
     }
 
     #[must_use]
-    fn branch_raw<K, U, V>(&self, denom: BigUint, lhs: U, rhs: V) -> Die<K>
+    fn branch_raw<K, U, V>(&self, denom: Count, lhs: U, rhs: V) -> Die<K>
     where
         K: Clone + Ord,
         U: Borrow<Die<K>>,
