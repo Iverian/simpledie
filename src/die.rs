@@ -184,11 +184,11 @@ impl<K> Die<K> {
         let denom = dice
             .borrow()
             .iter()
-            .fold(Count::one(), |acc, x| acc * x.borrow().denom);
-        if denom < Count::from(SAMPLE_SIZE) {
-            Self::combine_raw(denom, dice, op)
-        } else {
-            Self::combine_approx(dice, op)
+            .try_fold(Count::one(), |acc, x| acc.checked_mul(x.borrow().denom));
+        match denom {
+            None => Self::combine_approx(dice, op),
+            Some(x) if x >= Count::from(SAMPLE_SIZE) => Self::combine_approx(dice, op),
+            Some(x) => Self::combine_raw(x, dice, op),
         }
     }
 
@@ -248,11 +248,11 @@ impl<K> Die<K> {
         U: Ord,
         Q: Borrow<Die<T>>,
     {
-        let denom = self.denom * other.borrow().denom;
-        if denom < Count::from(SAMPLE_SIZE) {
-            self.combine_with_raw(denom, other, op)
-        } else {
-            self.combine_with_approx(other, op)
+        let denom = self.denom.checked_mul(other.borrow().denom);
+        match denom {
+            None => self.combine_with_approx(other, op),
+            Some(x) if x >= Count::from(SAMPLE_SIZE) => self.combine_with_approx(other, op),
+            Some(x) => self.combine_with_raw(x, other, op),
         }
     }
 
@@ -416,11 +416,14 @@ where
         U: Borrow<Die<K>>,
         V: Borrow<Die<K>>,
     {
-        let denom = self.denom * lhs.borrow().denom * rhs.borrow().denom;
-        if denom < Count::from(SAMPLE_SIZE) {
-            self.branch_raw(denom, lhs, rhs)
-        } else {
-            self.branch_approx(lhs, rhs)
+        let denom = self
+            .denom
+            .checked_mul(lhs.borrow().denom)
+            .and_then(|x| x.checked_mul(rhs.borrow().denom));
+        match denom {
+            None => self.branch_approx(lhs, rhs),
+            Some(x) if x >= Count::from(SAMPLE_SIZE) => self.branch_approx(lhs, rhs),
+            Some(x) => self.branch_raw(x, lhs, rhs),
         }
     }
 
