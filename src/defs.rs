@@ -2,7 +2,7 @@ use once_cell::sync::Lazy;
 
 use crate::die::Die;
 
-pub static D0: Lazy<Die<i32>> = Lazy::new(|| Die::single(0));
+pub static D1: Lazy<Die<i32>> = Lazy::new(|| Die::single(1));
 pub static D2: Lazy<Die<i32>> = Lazy::new(|| Die::uniform(2));
 pub static D3: Lazy<Die<i32>> = Lazy::new(|| Die::uniform(3));
 pub static D4: Lazy<Die<i32>> = Lazy::new(|| Die::uniform(4));
@@ -13,8 +13,8 @@ pub static D12: Lazy<Die<i32>> = Lazy::new(|| Die::uniform(12));
 pub static D20: Lazy<Die<i32>> = Lazy::new(|| Die::uniform(20));
 pub static D100: Lazy<Die<i32>> = Lazy::new(|| Die::uniform(100));
 
-pub fn d0() -> Die<i32> {
-    D0.clone()
+pub fn d1() -> Die<i32> {
+    D1.clone()
 }
 
 pub fn d2() -> Die<i32> {

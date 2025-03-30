@@ -2,18 +2,23 @@ use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::btree_map::Entry;
 use std::fmt::Debug;
+use std::iter::Sum;
 use std::ops::{Add, Div, Mul, Sub};
 
 use itertools::Itertools;
 use num::bigint::{RandBigInt, ToBigUint};
 use num::rational::Ratio;
 use num::traits::One;
-use num::{BigUint, ToPrimitive};
-use rand::RngCore;
+use num::{BigUint, FromPrimitive, ToPrimitive};
+use once_cell::sync::Lazy;
+use rand::{thread_rng, RngCore};
 use thiserror::Error;
 
+use crate::approx::Approx;
 use crate::die_list::DieList;
 use crate::util::{Count, DieMap};
+
+static RAW_LIMIT: Lazy<BigUint> = Lazy::new(|| BigUint::from_u32(10_000_000).unwrap());
 
 #[derive(Debug, Clone)]
 pub struct Die<K> {
@@ -186,6 +191,40 @@ impl<K> Die<K> {
         Q: Borrow<Self>,
         V: Borrow<[Q]>,
     {
+        let denom = dice
+            .borrow()
+            .iter()
+            .fold(Count::one(), |acc, x| acc * &x.borrow().denom);
+        if denom < *RAW_LIMIT {
+            Self::combine_raw(denom, dice, op)
+        } else {
+            Self::combine_approx(dice, op)
+        }
+    }
+
+    #[must_use]
+    fn combine_approx<F, U, Q, V>(dice: V, op: F) -> Die<U>
+    where
+        F: Fn(&[&K]) -> U,
+        U: Ord,
+        Q: Borrow<Self>,
+        V: Borrow<[Q]>,
+    {
+        let dice = dice.borrow();
+        Approx::new(thread_rng()).build(|rng| {
+            let x: Vec<_> = dice.iter().map(|x| x.borrow().sample(rng)).collect();
+            op(x.as_slice())
+        })
+    }
+
+    #[must_use]
+    fn combine_raw<F, U, Q, V>(denom: BigUint, dice: V, op: F) -> Die<U>
+    where
+        F: Fn(&[&K]) -> U,
+        U: Ord,
+        Q: Borrow<Self>,
+        V: Borrow<[Q]>,
+    {
         let dice = dice.borrow();
         let mut outcomes = DieMap::<U, _>::new();
         let mut key = Vec::with_capacity(dice.len());
@@ -209,15 +248,41 @@ impl<K> Die<K> {
                 }
             }
         }
-        Die::<U>::from_raw_map(
-            dice.iter()
-                .fold(Count::one(), |acc, x| acc * &x.borrow().denom),
-            outcomes,
-        )
+        Die::<U>::from_raw_map(denom, outcomes)
     }
 
     #[must_use]
     pub fn combine_with<F, T, U, Q>(&self, other: Q, op: F) -> Die<U>
+    where
+        F: Fn(&K, &T) -> U,
+        U: Ord,
+        Q: Borrow<Die<T>>,
+    {
+        let denom = &self.denom * &other.borrow().denom;
+        if denom < *RAW_LIMIT {
+            self.combine_with_raw(denom, other, op)
+        } else {
+            self.combine_with_approx(other, op)
+        }
+    }
+
+    #[must_use]
+    fn combine_with_approx<F, T, U, Q>(&self, other: Q, op: F) -> Die<U>
+    where
+        F: Fn(&K, &T) -> U,
+        U: Ord,
+        Q: Borrow<Die<T>>,
+    {
+        let other = other.borrow();
+        Approx::new(thread_rng()).build(|rng| {
+            let x = self.sample(rng);
+            let y = other.sample(rng);
+            op(x, y)
+        })
+    }
+
+    #[must_use]
+    fn combine_with_raw<F, T, U, Q>(&self, denom: BigUint, other: Q, op: F) -> Die<U>
     where
         F: Fn(&K, &T) -> U,
         U: Ord,
@@ -237,7 +302,7 @@ impl<K> Die<K> {
                 }
             }
         }
-        Die::<U>::from_raw_map(&self.denom * &other.denom, outcomes)
+        Die::<U>::from_raw_map(denom, outcomes)
     }
 
     pub(crate) fn try_biect_map<F, U, E>(self, op: F) -> core::result::Result<Die<U>, E>
@@ -282,7 +347,7 @@ where
     K: Clone,
 {
     #[must_use]
-    pub fn list(self, count: usize) -> DieList<K> {
+    pub fn n(self, count: usize) -> DieList<K> {
         DieList::repeat(count, self)
     }
 }
@@ -291,21 +356,6 @@ impl<K> Die<K>
 where
     K: Ord + Clone,
 {
-    #[must_use]
-    pub fn repeat<F>(&self, count: usize, op: F) -> Self
-    where
-        F: Fn(&K, &K) -> K + Copy,
-    {
-        let mut result = self.clone();
-        if count < 2 {
-            return result;
-        }
-        for _ in 1..count {
-            result = result.combine_with(self, |x, y| op(x, y).clone());
-        }
-        result
-    }
-
     #[must_use]
     pub fn mode(&self) -> Vec<&K> {
         self.zip()
@@ -376,6 +426,36 @@ where
         U: Borrow<Die<K>>,
         V: Borrow<Die<K>>,
     {
+        let denom = &self.denom * &lhs.borrow().denom * &rhs.borrow().denom;
+        if denom < *RAW_LIMIT {
+            self.branch_raw(denom, lhs, rhs)
+        } else {
+            self.branch_approx(lhs, rhs)
+        }
+    }
+
+    #[must_use]
+    fn branch_approx<K, U, V>(&self, lhs: U, rhs: V) -> Die<K>
+    where
+        K: Clone + Ord,
+        U: Borrow<Die<K>>,
+        V: Borrow<Die<K>>,
+    {
+        let lhs = lhs.borrow();
+        let rhs = rhs.borrow();
+        Approx::new(thread_rng()).build(|rng| {
+            let a = self.sample(rng).clone().into();
+            if a { lhs.sample(rng) } else { rhs.sample(rng) }.clone()
+        })
+    }
+
+    #[must_use]
+    fn branch_raw<K, U, V>(&self, denom: BigUint, lhs: U, rhs: V) -> Die<K>
+    where
+        K: Clone + Ord,
+        U: Borrow<Die<K>>,
+        V: Borrow<Die<K>>,
+    {
         let lhs = lhs.borrow();
         let rhs = rhs.borrow();
         let mut outcomes = DieMap::<K, _>::new();
@@ -396,7 +476,7 @@ where
             }
         }
 
-        Die::<K>::from_raw_map(&self.denom * &lhs.denom * &rhs.denom, outcomes)
+        Die::<K>::from_raw_map(denom, outcomes)
     }
 }
 
@@ -485,26 +565,6 @@ where
     #[must_use]
     pub fn min(&self, rhs: &Self) -> Self {
         self.combine_with(rhs, |x, y| x.min(y).clone())
-    }
-
-    #[must_use]
-    pub fn max_of(&self, count: usize) -> Self {
-        self.repeat(count, |x, y| x.max(y).clone())
-    }
-
-    #[must_use]
-    pub fn min_of(&self, count: usize) -> Self {
-        self.repeat(count, |x, y| x.min(y).clone())
-    }
-}
-
-impl<K> Die<K>
-where
-    K: Copy + Ord + Add<K, Output = K>,
-{
-    #[must_use]
-    pub fn sum_of(&self, count: usize) -> Self {
-        self.repeat(count, |x, y| *x + *y)
     }
 }
 
@@ -692,24 +752,26 @@ where
 
 impl<T, K> Mul<T> for Die<K>
 where
-    K: Copy + Ord + Add<K, Output = K>,
+    K: Copy + Ord + Sum,
     T: Into<usize>,
 {
     type Output = Die<K>;
 
     fn mul(self, rhs: T) -> Self::Output {
-        self.repeat(rhs.into(), |x, y| *x + *y)
+        let dice: Vec<_> = std::iter::repeat_n(self, rhs.into()).collect();
+        Die::combine(dice.as_slice(), |x| x.iter().map(|&&x| x).sum())
     }
 }
 
 impl<T, K> Mul<T> for &Die<K>
 where
-    K: Copy + Ord + Add<K, Output = K>,
+    K: Copy + Ord + Sum,
     T: Into<usize>,
 {
     type Output = Die<K>;
 
     fn mul(self, rhs: T) -> Self::Output {
-        self.repeat(rhs.into(), |x, y| *x + *y)
+        let dice: Vec<_> = std::iter::repeat_n(self, rhs.into()).collect();
+        Die::combine(dice.as_slice(), |x| x.iter().map(|&&x| x).sum())
     }
 }
