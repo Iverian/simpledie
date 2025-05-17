@@ -293,6 +293,7 @@ impl Die {
     }
 
     #[cfg(feature = "parallel")]
+    #[inline]
     #[must_use]
     pub(crate) fn combine_direct<F, O, Q, V>(denom: Value, dice: V, op: F) -> Die
     where
@@ -320,15 +321,16 @@ impl Die {
     {
         let dice = dice.borrow();
         let mut outcomes = die_map();
-        let mut key = vec![0; dice.len()];
+        let mut key = Vec::with_capacity(dice.len());
         for p in dice
             .iter()
             .map(|x| x.borrow().iter())
             .multi_cartesian_product()
         {
+            key.clear();
             let mut count = 1;
-            for (i, (k, c)) in p.into_iter().enumerate() {
-                key[i] = k;
+            for (k, c) in p {
+                key.push(k);
                 count *= c;
             }
             match outcomes.entry(op(key.as_slice()).into()) {
@@ -434,10 +436,7 @@ impl Die {
     }
 
     #[must_use]
-    pub(crate) fn from_map<K>(denom: K, value: DieMap) -> Self
-    where
-        K: Into<Value>,
-    {
+    pub(crate) fn from_map(denom: Value, value: DieMap) -> Self {
         let mut keys = Vec::with_capacity(value.len());
         let mut outcomes = Vec::with_capacity(value.len());
         for (k, v) in value {
@@ -445,7 +444,7 @@ impl Die {
             outcomes.push(v);
         }
         Self {
-            denom: denom.into(),
+            denom,
             keys,
             outcomes,
         }

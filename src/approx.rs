@@ -4,7 +4,7 @@ use rand::{thread_rng, RngCore};
 
 use crate::die::Die;
 use crate::util::{
-    die_map, Entry, Key, APPROX_ACCURACY, APPROX_MAX_SAMPLE_SIZE, APPROX_MIN_SAMPLE_SIZE,
+    die_map, Entry, Key, Value, APPROX_ACCURACY, APPROX_MAX_SAMPLE_SIZE, APPROX_MIN_SAMPLE_SIZE,
 };
 
 #[derive(Debug, Builder)]
@@ -78,7 +78,7 @@ where
             }
         }
 
-        Die::from_map(denom.unwrap_or(self.max_sample_size), outcomes)
+        Die::from_map(Value::from(denom.unwrap_or(self.max_sample_size)), outcomes)
     }
 
     #[must_use]

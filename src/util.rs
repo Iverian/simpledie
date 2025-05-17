@@ -11,7 +11,7 @@ pub(crate) const PARALLEL_MIN_DENOM: Value = 1_000_000_000;
 pub(crate) const PARALLEL_CHUNK_SIZE: usize = 10_000_000;
 
 pub(crate) type Key = i32;
-pub(crate) type Value = u128;
+pub(crate) type Value = u64;
 pub(crate) type Probability = f64;
 pub(crate) type DieMap = BTreeMap<Key, Value>;
 pub(crate) type Entry<'a> = std::collections::btree_map::Entry<'a, Key, Value>;

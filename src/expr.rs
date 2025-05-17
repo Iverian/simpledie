@@ -7,12 +7,14 @@ use crate::util::{BigUint, FnPtr, Key, Rc, Value};
 pub type MapFnPtr = FnPtr<dyn Fn(Key) -> Key + 'static>;
 pub type CombineFnPtr = FnPtr<dyn Fn(&[Key]) -> Key + 'static>;
 
+type DiceList = Vec<Rc<Die>>;
+
 #[derive(Clone, Debug)]
 pub struct Expr<T>
 where
     T: Operation,
 {
-    dice: Vec<Rc<Die>>,
+    dice: DiceList,
     op: T,
 }
 
@@ -214,17 +216,26 @@ impl<T> Expr<T>
 where
     T: Operation + Clone,
 {
-    fn explode(self, size: usize) -> (Vec<Rc<Die>>, Vec<T>) {
+    fn explode(self, size: usize) -> (DiceList, Vec<T>) {
+        assert!(size != 0, "explode size cannot be zero");
+        if size == 1 {
+            return (self.dice, vec![self.op]);
+        }
+
         let m = self.dice.len();
         let mut dice = Vec::with_capacity(size * m);
-        let mut expr = Vec::with_capacity(size);
-        for i in 0..size {
-            let mut e = self.op.clone();
-            e.shift_identity(i * m);
-            expr.push(e);
+        let mut op = Vec::with_capacity(size);
+
+        for i in 1..size {
+            let mut item = self.op.clone();
             dice.extend(self.dice.iter().cloned());
+            item.shift_identity(i * m);
+            op.push(item);
         }
-        (dice, expr)
+        dice.extend(self.dice);
+        op.push(self.op);
+
+        (dice, op)
     }
 }
 
