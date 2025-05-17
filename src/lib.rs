@@ -3,6 +3,6 @@
 pub mod approx;
 pub mod defs;
 pub mod die;
-pub mod die_list;
+pub mod expr;
 pub mod prelude;
 mod util;

@@ -3,13 +3,12 @@ use std::collections::btree_map::Entry;
 use rand::RngCore;
 
 use crate::die::Die;
-use crate::util::{DieMap, SAMPLE_SIZE};
+use crate::util::{DieMap, Key, APPROX_ACCURACY, APPROX_MAX_SAMPLE_SIZE, APPROX_MIN_SAMPLE_SIZE};
 
 pub struct Approx<G>
 where
     G: RngCore,
 {
-    sample_size: u32,
     rng: G,
 }
 
@@ -19,58 +18,74 @@ where
 {
     #[must_use]
     pub fn new(rng: G) -> Self {
-        Self {
-            sample_size: SAMPLE_SIZE,
-            rng,
-        }
-    }
-
-    pub fn sample_size(&self) -> u32 {
-        self.sample_size
-    }
-
-    pub fn set_sample_size(&mut self, value: u32) {
-        assert_ne!(value, 0);
-        self.sample_size = value;
+        Self { rng }
     }
 
     #[must_use]
-    pub fn build<K, F>(&mut self, mut op: F) -> Die<K>
+    pub fn build<F>(&mut self, mut op: F) -> Die
     where
-        F: FnMut(&mut G) -> K,
-        K: Ord,
+        F: FnMut(&mut G) -> Key,
     {
         let mut outcomes = DieMap::new();
-        for _ in 0..self.sample_size {
-            match outcomes.entry(op(&mut self.rng)) {
+        let mut s = 0f64;
+        let mut denom = None;
+
+        for _ in 0..APPROX_MIN_SAMPLE_SIZE {
+            let k = op(&mut self.rng);
+
+            match outcomes.entry(k) {
                 Entry::Vacant(e) => {
-                    e.insert(1u32);
+                    e.insert(1);
                 }
                 Entry::Occupied(mut e) => {
                     *e.get_mut() += 1;
                 }
             }
+
+            s += f64::from(k);
         }
-        Die::from_map(self.sample_size, outcomes)
+
+        for i in APPROX_MIN_SAMPLE_SIZE..APPROX_MAX_SAMPLE_SIZE {
+            let k = op(&mut self.rng);
+
+            match outcomes.entry(k) {
+                Entry::Vacant(e) => {
+                    e.insert(1);
+                }
+                Entry::Occupied(mut e) => {
+                    *e.get_mut() += 1;
+                }
+            }
+
+            let sp = s;
+            s += f64::from(k);
+            let mp = sp / f64::from(i - 1);
+            let mc = s / f64::from(i);
+            if (mp - mc).abs() < APPROX_ACCURACY {
+                denom = Some(i);
+                break;
+            }
+        }
+
+        Die::from_map(denom.unwrap_or(APPROX_MAX_SAMPLE_SIZE), outcomes)
     }
 
     #[must_use]
-    pub fn throws<K, P, F>(&mut self, die: Die<K>, init: K, pred: P, op: F) -> Die<u32>
+    pub fn throws<P, F>(&mut self, die: Die, init: Key, pred: P, op: F) -> Die
     where
-        K: Clone,
-        P: Fn(&K) -> bool,
-        F: Fn(&K, &K) -> K,
+        P: Fn(Key) -> bool,
+        F: Fn(Key, Key) -> Key,
     {
-        let ss = self.sample_size;
+        let steps = Key::try_from(APPROX_MAX_SAMPLE_SIZE).unwrap_or(Key::MAX);
         self.build(move |g| {
-            let mut value = init.clone();
-            for i in 0..ss {
-                value = op(&value, die.sample(g));
-                if !pred(&value) {
+            let mut value = init;
+            for i in 0..steps {
+                value = op(value, die.sample(g));
+                if !pred(value) {
                     return i;
                 }
             }
-            ss
+            steps
         })
     }
 }
