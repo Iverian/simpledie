@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 
-use crate::die::Die;
+use crate::approx::Approx;
+use crate::die::{Die, OverflowResult};
 use crate::util::{BigUint, Key, Rc, Value};
 
 pub type BoxMapFn = Box<dyn Fn(Key) -> Key + 'static>;
@@ -183,15 +184,27 @@ impl<T> Evaluation<T>
 where
     T: Expression,
 {
-    pub fn collect(self) -> Die {
+    pub fn eval(self) -> Die {
         Die::combine(self.dice, move |x| self.expr.eval(x))
     }
 
-    pub fn denom(self) -> BigUint {
+    pub fn try_eval(self) -> OverflowResult<Die> {
+        Die::try_combine(self.dice, move |x| self.expr.eval(x))
+    }
+
+    pub fn approx_eval(self, approx: Approx) -> Die {
+        Die::combine_approx(approx, self.dice, move |x| self.expr.eval(x))
+    }
+
+    pub fn denom(&self) -> BigUint {
         self.dice
             .iter()
             .map(|x| BigUint::from(x.denom()))
             .fold(BigUint::from(1 as Value), |acc, x| acc * x)
+    }
+
+    pub fn can_eval_directly(&self) -> bool {
+        self.denom() < BigUint::from(Value::MAX)
     }
 }
 
@@ -227,7 +240,7 @@ where
     T: Expression,
 {
     fn from(value: Evaluation<T>) -> Self {
-        value.collect()
+        value.eval()
     }
 }
 
@@ -351,7 +364,8 @@ where
     T: Expression,
 {
     fn eval(&self, values: &[Key]) -> Key {
-        self.0.eval(values).cmp(&self.1) as Key
+        let result = self.0.eval(values).cmp(&self.1);
+        result as Key
     }
 
     fn shift_identity(&mut self, value: usize) {

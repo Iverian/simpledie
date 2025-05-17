@@ -7,11 +7,11 @@ use std::num::NonZeroU16;
 use itertools::Itertools;
 use num::rational::Ratio;
 use num::ToPrimitive;
-use rand::{thread_rng, Rng, RngCore};
+use rand::{Rng, RngCore};
 use thiserror::Error;
 
 use crate::approx::Approx;
-use crate::util::{BigInt, BigRatio, DieMap, Key, Probability, Value, APPROX_MAX_SAMPLE_SIZE};
+use crate::util::{BigInt, BigRatio, DieMap, Key, Probability, Value, DIRECT_MAX_DENOM};
 
 #[derive(Debug, Clone)]
 pub struct Die {
@@ -33,12 +33,10 @@ pub struct DieIter<'a> {
 }
 
 #[derive(Debug, Clone, Error)]
-pub enum Error {
-    #[error("overflow in probability")]
-    Overflow,
-}
+#[error("overflow in probabilities")]
+pub struct OverflowError;
 
-pub type Result<T> = ::core::result::Result<T, Error>;
+pub type OverflowResult<T> = Result<T, OverflowError>;
 
 impl Die {
     #[must_use]
@@ -237,29 +235,48 @@ impl Die {
             .iter()
             .try_fold(1 as Value, |acc, x| acc.checked_mul(x.borrow().denom));
         match denom {
-            None => Self::combine_approx(dice, op),
-            Some(x) if x > Value::from(APPROX_MAX_SAMPLE_SIZE) => Self::combine_approx(dice, op),
-            Some(x) => Self::combine_raw(x, dice, op),
+            None => Self::combine_approx(Approx::default(), dice, op),
+            Some(x) if x > Value::from(DIRECT_MAX_DENOM) => {
+                Self::combine_approx(Approx::default(), dice, op)
+            }
+            Some(x) => Self::combine_direct(x, dice, op),
         }
     }
 
-    #[must_use]
-    fn combine_approx<F, O, Q, V>(dice: V, op: F) -> Die
+    pub fn try_combine<F, O, Q, V>(dice: V, op: F) -> OverflowResult<Die>
     where
         F: Fn(&[Key]) -> O,
         O: Into<Key>,
         Q: Borrow<Self>,
         V: Borrow<[Q]>,
     {
+        let Some(denom) = dice
+            .borrow()
+            .iter()
+            .try_fold(1 as Value, |acc, x| acc.checked_mul(x.borrow().denom)) else {
+                return Err(OverflowError);
+            };
+        Ok(Self::combine_direct(denom, dice, op))
+    }
+
+    #[must_use]
+    pub(crate) fn combine_approx<F, O, Q, V, G>(mut approx: Approx<G>, dice: V, op: F) -> Die
+    where
+        F: Fn(&[Key]) -> O,
+        O: Into<Key>,
+        Q: Borrow<Self>,
+        V: Borrow<[Q]>,
+        G: RngCore,
+    {
         let dice = dice.borrow();
-        Approx::new(thread_rng()).build(|rng| {
+        approx.approximate(|rng| {
             let x: Vec<_> = dice.iter().map(|x| x.borrow().sample(rng)).collect();
             op(x.as_slice()).into()
         })
     }
 
     #[must_use]
-    fn combine_raw<F, O, Q, V>(denom: Value, dice: V, op: F) -> Die
+    pub(crate) fn combine_direct<F, O, Q, V>(denom: Value, dice: V, op: F) -> Die
     where
         F: Fn(&[Key]) -> O,
         O: Into<Key>,
@@ -289,131 +306,6 @@ impl Die {
                 }
             }
         }
-        Die::from_raw_map(denom, outcomes)
-    }
-
-    #[must_use]
-    pub fn combine_with<F, O, Q>(&self, other: Q, op: F) -> Die
-    where
-        F: Fn(Key, Key) -> O,
-        O: Into<Key>,
-        Q: Borrow<Die>,
-    {
-        let denom = self.denom.checked_mul(other.borrow().denom);
-        match denom {
-            None => self.combine_with_approx(other, op),
-            Some(x) if x > Value::from(APPROX_MAX_SAMPLE_SIZE) => {
-                self.combine_with_approx(other, op)
-            }
-            Some(x) => self.combine_with_raw(x, other, op),
-        }
-    }
-
-    #[must_use]
-    fn combine_with_approx<F, O, Q>(&self, other: Q, op: F) -> Die
-    where
-        F: Fn(Key, Key) -> O,
-        O: Into<Key>,
-        Q: Borrow<Die>,
-    {
-        let other = other.borrow();
-        Approx::new(thread_rng()).build(|rng| {
-            let x = self.sample(rng);
-            let y = other.sample(rng);
-            op(x, y).into()
-        })
-    }
-
-    #[must_use]
-    fn combine_with_raw<F, O, Q>(&self, denom: Value, other: Q, op: F) -> Die
-    where
-        F: Fn(Key, Key) -> O,
-        O: Into<Key>,
-        Q: Borrow<Die>,
-    {
-        let other = other.borrow();
-        let mut outcomes = DieMap::new();
-        for (k1, c1) in self.zip() {
-            for (k2, c2) in other.zip() {
-                match outcomes.entry(op(*k1, *k2).into()) {
-                    Entry::Vacant(e) => {
-                        e.insert(c1 * c2);
-                    }
-                    Entry::Occupied(mut e) => {
-                        *e.get_mut() += c1 * c2;
-                    }
-                }
-            }
-        }
-        Die::from_raw_map(denom, outcomes)
-    }
-
-    #[must_use]
-    pub fn branch<F, U, V>(&self, pred: F, lhs: U, rhs: V) -> Die
-    where
-        F: Fn(Key) -> bool,
-        U: Borrow<Die>,
-        V: Borrow<Die>,
-    {
-        let denom = self
-            .denom
-            .checked_mul(lhs.borrow().denom)
-            .and_then(|x| x.checked_mul(rhs.borrow().denom));
-        match denom {
-            None => self.branch_approx(pred, lhs, rhs),
-            Some(x) if x > Value::from(APPROX_MAX_SAMPLE_SIZE) => {
-                self.branch_approx(pred, lhs, rhs)
-            }
-            Some(x) => self.branch_raw(x, pred, lhs, rhs),
-        }
-    }
-
-    #[must_use]
-    fn branch_approx<F, U, V>(&self, pred: F, lhs: U, rhs: V) -> Die
-    where
-        F: Fn(Key) -> bool,
-        U: Borrow<Die>,
-        V: Borrow<Die>,
-    {
-        let lhs = lhs.borrow();
-        let rhs = rhs.borrow();
-        Approx::new(thread_rng()).build(|rng| {
-            let a = pred(self.sample(rng));
-            if a {
-                lhs.sample(rng)
-            } else {
-                rhs.sample(rng)
-            }
-        })
-    }
-
-    #[must_use]
-    fn branch_raw<F, U, V>(&self, denom: Value, pred: F, lhs: U, rhs: V) -> Die
-    where
-        F: Fn(Key) -> bool,
-        U: Borrow<Die>,
-        V: Borrow<Die>,
-    {
-        let lhs = lhs.borrow();
-        let rhs = rhs.borrow();
-        let mut outcomes = DieMap::new();
-
-        for (kc, cc) in self.zip() {
-            let kc = pred(*kc);
-            for (k1, c1) in lhs.zip() {
-                for (k2, c2) in rhs.zip() {
-                    match outcomes.entry(if kc { *k1 } else { *k2 }) {
-                        Entry::Vacant(e) => {
-                            e.insert(cc * c1 * c2);
-                        }
-                        Entry::Occupied(mut e) => {
-                            *e.get_mut() += cc * c1 * c2;
-                        }
-                    }
-                }
-            }
-        }
-
         Die::from_raw_map(denom, outcomes)
     }
 
