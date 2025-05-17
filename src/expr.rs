@@ -8,113 +8,113 @@ pub type BoxMapFn = Box<dyn Fn(Key) -> Key + 'static>;
 pub type BoxCombineFn = Box<dyn Fn(&[Key]) -> Key + 'static>;
 
 #[derive(Clone, Debug)]
-pub struct Evaluation<T>
+pub struct Expr<T>
 where
-    T: Expression,
+    T: Operation,
 {
     dice: Vec<Rc<Die>>,
-    expr: T,
+    op: T,
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct IdentityExpr(usize);
+pub struct Identity(usize);
 
 pub struct MapExpr<T>(T, BoxMapFn);
 
 #[derive(Clone, Copy, Debug)]
-pub struct NegateExpr<T>(T);
+pub struct Negate<T>(T);
 
 #[derive(Clone, Copy, Debug)]
-pub struct AddKeyExpr<T>(T, Key);
+pub struct AddKey<T>(T, Key);
 
 #[derive(Clone, Copy, Debug)]
-pub struct SubKeyExpr<T>(T, Key);
+pub struct SubKey<T>(T, Key);
 
 #[derive(Clone, Copy, Debug)]
-pub struct MulKeyExpr<T>(T, Key);
+pub struct MulKey<T>(T, Key);
 
 #[derive(Clone, Copy, Debug)]
-pub struct DivKeyExpr<T>(T, Key);
+pub struct DivKey<T>(T, Key);
 
 #[derive(Clone, Copy, Debug)]
-pub struct NotExpr<T>(T);
+pub struct Not<T>(T);
 
 #[derive(Clone, Debug)]
-pub struct EqExpr<T>(T, Vec<Key>);
+pub struct Eq<T>(T, Vec<Key>);
 
 #[derive(Clone, Copy, Debug)]
-pub struct CompareExpr<T>(T, Key);
+pub struct Cmp<T>(T, Key);
 
 #[derive(Clone, Copy, Debug)]
-pub struct AddExpr<L, R>(L, R);
+pub struct Add<L, R>(L, R);
 
 #[derive(Clone, Copy, Debug)]
-pub struct MulExpr<L, R>(L, R);
+pub struct Mul<L, R>(L, R);
 
 #[derive(Clone, Copy, Debug)]
-pub struct DivExpr<L, R>(L, R);
+pub struct Div<L, R>(L, R);
 
-pub struct CombineExpr<T>(Vec<T>, BoxCombineFn);
+pub struct Combine<T>(Vec<T>, BoxCombineFn);
 
 #[derive(Clone, Debug)]
-pub struct SumExpr<T>(Vec<T>);
+pub struct Sum<T>(Vec<T>);
 
 #[derive(Clone, Debug)]
-pub struct ProductExpr<T>(Vec<T>);
+pub struct Product<T>(Vec<T>);
 
 #[derive(Clone, Debug, Copy)]
-pub struct BranchExpr<C, L, R>(C, L, R);
+pub struct Branch<C, L, R>(C, L, R);
 
-pub trait Expression {
-    fn eval(&self, values: &[Key]) -> Key;
+pub trait Operation {
+    fn call(&self, values: &[Key]) -> Key;
     fn shift_identity(&mut self, value: usize);
 }
 
-pub trait EvaluationExt {
-    type Expr: Expression;
+pub trait ExprExt {
+    type Op: Operation;
 
-    fn map<F>(self, op: F) -> Evaluation<MapExpr<Self::Expr>>
+    fn map<F>(self, op: F) -> Expr<MapExpr<Self::Op>>
     where
         F: Fn(Key) -> Key + 'static;
 
-    fn neg(self) -> Evaluation<NegateExpr<Self::Expr>>;
+    fn neg(self) -> Expr<Negate<Self::Op>>;
 
-    fn kadd(self, rhs: Key) -> Evaluation<AddKeyExpr<Self::Expr>>;
+    fn kadd(self, rhs: Key) -> Expr<AddKey<Self::Op>>;
 
-    fn ksub(self, rhs: Key) -> Evaluation<SubKeyExpr<Self::Expr>>;
+    fn ksub(self, rhs: Key) -> Expr<SubKey<Self::Op>>;
 
-    fn kmul(self, rhs: Key) -> Evaluation<MulKeyExpr<Self::Expr>>;
+    fn kmul(self, rhs: Key) -> Expr<MulKey<Self::Op>>;
 
-    fn kdiv(self, rhs: Key) -> Evaluation<DivKeyExpr<Self::Expr>>;
+    fn kdiv(self, rhs: Key) -> Expr<DivKey<Self::Op>>;
 
-    fn not(self) -> Evaluation<NotExpr<Self::Expr>>;
+    fn not(self) -> Expr<Not<Self::Op>>;
 
-    fn any(self, rhs: Vec<Key>) -> Evaluation<EqExpr<Self::Expr>>;
+    fn any(self, rhs: Vec<Key>) -> Expr<Eq<Self::Op>>;
 
-    fn eq(self, rhs: Key) -> Evaluation<EqExpr<Self::Expr>>
+    fn eq(self, rhs: Key) -> Expr<Eq<Self::Op>>
     where
         Self: Sized,
     {
         self.any(vec![rhs])
     }
 
-    fn neq(self, rhs: Key) -> Evaluation<NotExpr<EqExpr<Self::Expr>>>
+    fn neq(self, rhs: Key) -> Expr<Not<Eq<Self::Op>>>
     where
         Self: Sized,
     {
         self.eq(rhs).not()
     }
 
-    fn cmp(self, rhs: Key) -> Evaluation<CompareExpr<Self::Expr>>;
+    fn cmp(self, rhs: Key) -> Expr<Cmp<Self::Op>>;
 
-    fn lt(self, rhs: Key) -> Evaluation<EqExpr<CompareExpr<Self::Expr>>>
+    fn lt(self, rhs: Key) -> Expr<Eq<Cmp<Self::Op>>>
     where
         Self: Sized,
     {
         self.cmp(rhs).eq(Ordering::Less as Key)
     }
 
-    fn le(self, rhs: Key) -> Evaluation<EqExpr<CompareExpr<Self::Expr>>>
+    fn le(self, rhs: Key) -> Expr<Eq<Cmp<Self::Op>>>
     where
         Self: Sized,
     {
@@ -122,14 +122,14 @@ pub trait EvaluationExt {
             .any(vec![Ordering::Less as Key, Ordering::Equal as Key])
     }
 
-    fn gt(self, rhs: Key) -> Evaluation<EqExpr<CompareExpr<Self::Expr>>>
+    fn gt(self, rhs: Key) -> Expr<Eq<Cmp<Self::Op>>>
     where
         Self: Sized,
     {
         self.cmp(rhs).eq(Ordering::Greater as Key)
     }
 
-    fn ge(self, rhs: Key) -> Evaluation<EqExpr<CompareExpr<Self::Expr>>>
+    fn ge(self, rhs: Key) -> Expr<Eq<Cmp<Self::Op>>>
     where
         Self: Sized,
     {
@@ -137,63 +137,65 @@ pub trait EvaluationExt {
             .any(vec![Ordering::Greater as Key, Ordering::Equal as Key])
     }
 
-    fn add<R>(self, rhs: Evaluation<R>) -> Evaluation<AddExpr<Self::Expr, R>>
+    fn add<T, R>(self, rhs: T) -> Expr<Add<Self::Op, R>>
     where
-        R: Expression;
+        T: Into<Expr<R>>,
+        R: Operation;
 
-    fn sub<R>(self, rhs: Evaluation<R>) -> Evaluation<AddExpr<Self::Expr, NegateExpr<R>>>
+    fn sub<T, R>(self, rhs: T) -> Expr<Add<Self::Op, Negate<R>>>
     where
         Self: Sized,
-        R: Expression,
+        T: Into<Expr<R>>,
+        R: Operation,
     {
-        self.add(rhs.neg())
+        self.add(rhs.into().neg())
     }
 
-    fn mul<R>(self, rhs: Evaluation<R>) -> Evaluation<MulExpr<Self::Expr, R>>
+    fn mul<T, R>(self, rhs: T) -> Expr<Mul<Self::Op, R>>
     where
-        R: Expression;
+        T: Into<Expr<R>>,
+        R: Operation;
 
-    fn div<R>(self, rhs: Evaluation<R>) -> Evaluation<DivExpr<Self::Expr, R>>
+    fn div<T, R>(self, rhs: T) -> Expr<Div<Self::Op, R>>
     where
-        R: Expression;
+        T: Into<Expr<R>>,
+        R: Operation;
 
-    fn combine<F>(self, size: usize, op: F) -> Evaluation<CombineExpr<Self::Expr>>
+    fn combine<F>(self, size: usize, op: F) -> Expr<Combine<Self::Op>>
     where
-        Self::Expr: Clone,
+        Self::Op: Clone,
         F: Fn(&[Key]) -> Key + 'static;
 
-    fn sum(self, size: usize) -> Evaluation<SumExpr<Self::Expr>>
+    fn sum(self, size: usize) -> Expr<Sum<Self::Op>>
     where
-        Self::Expr: Clone;
+        Self::Op: Clone;
 
-    fn product(self, size: usize) -> Evaluation<ProductExpr<Self::Expr>>
+    fn product(self, size: usize) -> Expr<Product<Self::Op>>
     where
-        Self::Expr: Clone;
+        Self::Op: Clone;
 
-    fn branch<L, R>(
-        self,
-        lhs: Evaluation<L>,
-        rhs: Evaluation<R>,
-    ) -> Evaluation<BranchExpr<Self::Expr, L, R>>
+    fn branch<TL, TR, L, R>(self, lhs: TL, rhs: TR) -> Expr<Branch<Self::Op, L, R>>
     where
-        L: Expression,
-        R: Expression;
+        TL: Into<Expr<L>>,
+        TR: Into<Expr<R>>,
+        L: Operation,
+        R: Operation;
 }
 
-impl<T> Evaluation<T>
+impl<T> Expr<T>
 where
-    T: Expression,
+    T: Operation,
 {
     pub fn eval(self) -> Die {
-        Die::combine(self.dice, move |x| self.expr.eval(x))
+        Die::combine(self.dice, move |x| self.op.call(x))
     }
 
     pub fn try_eval(self) -> OverflowResult<Die> {
-        Die::try_combine(self.dice, move |x| self.expr.eval(x))
+        Die::try_combine(self.dice, move |x| self.op.call(x))
     }
 
     pub fn approx_eval(self, approx: Approx) -> Die {
-        Die::combine_approx(approx, self.dice, move |x| self.expr.eval(x))
+        Die::combine_approx(approx, self.dice, move |x| self.op.call(x))
     }
 
     pub fn denom(&self) -> BigUint {
@@ -208,16 +210,16 @@ where
     }
 }
 
-impl<T> Evaluation<T>
+impl<T> Expr<T>
 where
-    T: Expression + Clone,
+    T: Operation + Clone,
 {
     fn explode(self, size: usize) -> (Vec<Rc<Die>>, Vec<T>) {
         let m = self.dice.len();
         let mut dice = Vec::with_capacity(size * m);
         let mut expr = Vec::with_capacity(size);
         for i in 0..size {
-            let mut e = self.expr.clone();
+            let mut e = self.op.clone();
             e.shift_identity(i * m);
             expr.push(e);
             dice.extend(self.dice.iter().cloned());
@@ -226,26 +228,26 @@ where
     }
 }
 
-impl From<Die> for Evaluation<IdentityExpr> {
+impl From<Die> for Expr<Identity> {
     fn from(value: Die) -> Self {
-        Evaluation {
+        Expr {
             dice: vec![Rc::new(value)],
-            expr: IdentityExpr(0),
+            op: Identity(0),
         }
     }
 }
 
-impl<T> From<Evaluation<T>> for Die
+impl<T> From<Expr<T>> for Die
 where
-    T: Expression,
+    T: Operation,
 {
-    fn from(value: Evaluation<T>) -> Self {
+    fn from(value: Expr<T>) -> Self {
         value.eval()
     }
 }
 
-impl Expression for IdentityExpr {
-    fn eval(&self, values: &[Key]) -> Key {
+impl Operation for Identity {
+    fn call(&self, values: &[Key]) -> Key {
         values[self.0]
     }
 
@@ -254,12 +256,12 @@ impl Expression for IdentityExpr {
     }
 }
 
-impl<T> Expression for MapExpr<T>
+impl<T> Operation for MapExpr<T>
 where
-    T: Expression,
+    T: Operation,
 {
-    fn eval(&self, values: &[Key]) -> Key {
-        self.1(self.0.eval(values))
+    fn call(&self, values: &[Key]) -> Key {
+        self.1(self.0.call(values))
     }
 
     fn shift_identity(&mut self, value: usize) {
@@ -267,9 +269,9 @@ where
     }
 }
 
-impl<T: Expression> Expression for NegateExpr<T> {
-    fn eval(&self, values: &[Key]) -> Key {
-        -self.0.eval(values)
+impl<T: Operation> Operation for Negate<T> {
+    fn call(&self, values: &[Key]) -> Key {
+        -self.0.call(values)
     }
 
     fn shift_identity(&mut self, value: usize) {
@@ -277,12 +279,12 @@ impl<T: Expression> Expression for NegateExpr<T> {
     }
 }
 
-impl<T> Expression for AddKeyExpr<T>
+impl<T> Operation for AddKey<T>
 where
-    T: Expression,
+    T: Operation,
 {
-    fn eval(&self, values: &[Key]) -> Key {
-        self.0.eval(values) + self.1
+    fn call(&self, values: &[Key]) -> Key {
+        self.0.call(values) + self.1
     }
 
     fn shift_identity(&mut self, value: usize) {
@@ -290,12 +292,12 @@ where
     }
 }
 
-impl<T> Expression for SubKeyExpr<T>
+impl<T> Operation for SubKey<T>
 where
-    T: Expression,
+    T: Operation,
 {
-    fn eval(&self, values: &[Key]) -> Key {
-        self.0.eval(values) - self.1
+    fn call(&self, values: &[Key]) -> Key {
+        self.0.call(values) - self.1
     }
 
     fn shift_identity(&mut self, value: usize) {
@@ -303,12 +305,12 @@ where
     }
 }
 
-impl<T> Expression for MulKeyExpr<T>
+impl<T> Operation for MulKey<T>
 where
-    T: Expression,
+    T: Operation,
 {
-    fn eval(&self, values: &[Key]) -> Key {
-        self.0.eval(values) * self.1
+    fn call(&self, values: &[Key]) -> Key {
+        self.0.call(values) * self.1
     }
 
     fn shift_identity(&mut self, value: usize) {
@@ -316,12 +318,12 @@ where
     }
 }
 
-impl<T> Expression for DivKeyExpr<T>
+impl<T> Operation for DivKey<T>
 where
-    T: Expression,
+    T: Operation,
 {
-    fn eval(&self, values: &[Key]) -> Key {
-        self.0.eval(values) / self.1
+    fn call(&self, values: &[Key]) -> Key {
+        self.0.call(values) / self.1
     }
 
     fn shift_identity(&mut self, value: usize) {
@@ -329,12 +331,12 @@ where
     }
 }
 
-impl<T> Expression for NotExpr<T>
+impl<T> Operation for Not<T>
 where
-    T: Expression,
+    T: Operation,
 {
-    fn eval(&self, values: &[Key]) -> Key {
-        Key::from(match self.0.eval(values) {
+    fn call(&self, values: &[Key]) -> Key {
+        Key::from(match self.0.call(values) {
             0 => 1,
             _ => 0,
         })
@@ -345,12 +347,12 @@ where
     }
 }
 
-impl<T> Expression for EqExpr<T>
+impl<T> Operation for Eq<T>
 where
-    T: Expression,
+    T: Operation,
 {
-    fn eval(&self, values: &[Key]) -> Key {
-        let v = self.0.eval(values);
+    fn call(&self, values: &[Key]) -> Key {
+        let v = self.0.call(values);
         Key::from(self.1.contains(&v))
     }
 
@@ -359,13 +361,12 @@ where
     }
 }
 
-impl<T> Expression for CompareExpr<T>
+impl<T> Operation for Cmp<T>
 where
-    T: Expression,
+    T: Operation,
 {
-    fn eval(&self, values: &[Key]) -> Key {
-        let result = self.0.eval(values).cmp(&self.1);
-        result as Key
+    fn call(&self, values: &[Key]) -> Key {
+        self.0.call(values).cmp(&self.1) as Key
     }
 
     fn shift_identity(&mut self, value: usize) {
@@ -373,15 +374,13 @@ where
     }
 }
 
-impl<L, R> Expression for AddExpr<L, R>
+impl<L, R> Operation for Add<L, R>
 where
-    L: Expression,
-    R: Expression,
+    L: Operation,
+    R: Operation,
 {
-    fn eval(&self, values: &[Key]) -> Key {
-        let lhs = self.0.eval(values);
-        let rhs = self.1.eval(values);
-        lhs + rhs
+    fn call(&self, values: &[Key]) -> Key {
+        self.0.call(values) + self.1.call(values)
     }
 
     fn shift_identity(&mut self, value: usize) {
@@ -390,15 +389,13 @@ where
     }
 }
 
-impl<L, R> Expression for MulExpr<L, R>
+impl<L, R> Operation for Mul<L, R>
 where
-    L: Expression,
-    R: Expression,
+    L: Operation,
+    R: Operation,
 {
-    fn eval(&self, values: &[Key]) -> Key {
-        let lhs = self.0.eval(values);
-        let rhs = self.1.eval(values);
-        lhs * rhs
+    fn call(&self, values: &[Key]) -> Key {
+        self.0.call(values) * self.1.call(values)
     }
 
     fn shift_identity(&mut self, value: usize) {
@@ -407,15 +404,13 @@ where
     }
 }
 
-impl<L, R> Expression for DivExpr<L, R>
+impl<L, R> Operation for Div<L, R>
 where
-    L: Expression,
-    R: Expression,
+    L: Operation,
+    R: Operation,
 {
-    fn eval(&self, values: &[Key]) -> Key {
-        let lhs = self.0.eval(values);
-        let rhs = self.1.eval(values);
-        lhs / rhs
+    fn call(&self, values: &[Key]) -> Key {
+        self.0.call(values) / self.1.call(values)
     }
 
     fn shift_identity(&mut self, value: usize) {
@@ -424,13 +419,18 @@ where
     }
 }
 
-impl<T> Expression for CombineExpr<T>
+impl<T> Operation for Combine<T>
 where
-    T: Expression,
+    T: Operation,
 {
-    fn eval(&self, values: &[Key]) -> Key {
-        let x: Vec<_> = self.0.iter().map(|x| x.eval(values)).collect();
-        self.1(x.as_slice())
+    fn call(&self, values: &[Key]) -> Key {
+        self.1(
+            self.0
+                .iter()
+                .map(|x| x.call(values))
+                .collect::<Vec<_>>()
+                .as_slice(),
+        )
     }
 
     fn shift_identity(&mut self, value: usize) {
@@ -440,12 +440,12 @@ where
     }
 }
 
-impl<T> Expression for SumExpr<T>
+impl<T> Operation for Sum<T>
 where
-    T: Expression,
+    T: Operation,
 {
-    fn eval(&self, values: &[Key]) -> Key {
-        self.0.iter().map(|x| x.eval(values)).sum()
+    fn call(&self, values: &[Key]) -> Key {
+        self.0.iter().map(|x| x.call(values)).sum()
     }
 
     fn shift_identity(&mut self, value: usize) {
@@ -455,12 +455,12 @@ where
     }
 }
 
-impl<T> Expression for ProductExpr<T>
+impl<T> Operation for Product<T>
 where
-    T: Expression,
+    T: Operation,
 {
-    fn eval(&self, values: &[Key]) -> Key {
-        self.0.iter().map(|x| x.eval(values)).product()
+    fn call(&self, values: &[Key]) -> Key {
+        self.0.iter().map(|x| x.call(values)).product()
     }
 
     fn shift_identity(&mut self, value: usize) {
@@ -470,17 +470,17 @@ where
     }
 }
 
-impl<C, L, R> Expression for BranchExpr<C, L, R>
+impl<C, L, R> Operation for Branch<C, L, R>
 where
-    C: Expression,
-    L: Expression,
-    R: Expression,
+    C: Operation,
+    L: Operation,
+    R: Operation,
 {
-    fn eval(&self, values: &[Key]) -> Key {
-        if self.0.eval(values) != 0 {
-            self.1.eval(values)
+    fn call(&self, values: &[Key]) -> Key {
+        if self.0.call(values) != 0 {
+            self.1.call(values)
         } else {
-            self.2.eval(values)
+            self.2.call(values)
         }
     }
 
@@ -491,267 +491,275 @@ where
     }
 }
 
-impl<E> EvaluationExt for Evaluation<E>
+impl<E> ExprExt for Expr<E>
 where
-    E: Expression,
+    E: Operation,
 {
-    type Expr = E;
+    type Op = E;
 
-    fn map<F>(self, op: F) -> Evaluation<MapExpr<Self::Expr>>
+    fn map<F>(self, op: F) -> Expr<MapExpr<Self::Op>>
     where
         F: Fn(Key) -> Key + 'static,
     {
-        Evaluation {
+        Expr {
             dice: self.dice,
-            expr: MapExpr(self.expr, Box::new(op)),
+            op: MapExpr(self.op, Box::new(op)),
         }
     }
 
-    fn neg(self) -> Evaluation<NegateExpr<Self::Expr>> {
-        Evaluation {
+    fn neg(self) -> Expr<Negate<Self::Op>> {
+        Expr {
             dice: self.dice,
-            expr: NegateExpr(self.expr),
+            op: Negate(self.op),
         }
     }
 
-    fn kadd(self, rhs: Key) -> Evaluation<AddKeyExpr<Self::Expr>> {
-        Evaluation {
+    fn kadd(self, rhs: Key) -> Expr<AddKey<Self::Op>> {
+        Expr {
             dice: self.dice,
-            expr: AddKeyExpr(self.expr, rhs),
+            op: AddKey(self.op, rhs),
         }
     }
 
-    fn ksub(self, rhs: Key) -> Evaluation<SubKeyExpr<Self::Expr>> {
-        Evaluation {
+    fn ksub(self, rhs: Key) -> Expr<SubKey<Self::Op>> {
+        Expr {
             dice: self.dice,
-            expr: SubKeyExpr(self.expr, rhs),
+            op: SubKey(self.op, rhs),
         }
     }
 
-    fn kmul(self, rhs: Key) -> Evaluation<MulKeyExpr<Self::Expr>> {
-        Evaluation {
+    fn kmul(self, rhs: Key) -> Expr<MulKey<Self::Op>> {
+        Expr {
             dice: self.dice,
-            expr: MulKeyExpr(self.expr, rhs),
+            op: MulKey(self.op, rhs),
         }
     }
 
-    fn kdiv(self, rhs: Key) -> Evaluation<DivKeyExpr<Self::Expr>> {
-        Evaluation {
+    fn kdiv(self, rhs: Key) -> Expr<DivKey<Self::Op>> {
+        Expr {
             dice: self.dice,
-            expr: DivKeyExpr(self.expr, rhs),
+            op: DivKey(self.op, rhs),
         }
     }
 
-    fn not(self) -> Evaluation<NotExpr<Self::Expr>> {
-        Evaluation {
+    fn not(self) -> Expr<Not<Self::Op>> {
+        Expr {
             dice: self.dice,
-            expr: NotExpr(self.expr),
+            op: Not(self.op),
         }
     }
 
-    fn any(self, rhs: Vec<Key>) -> Evaluation<EqExpr<Self::Expr>> {
-        Evaluation {
+    fn any(self, rhs: Vec<Key>) -> Expr<Eq<Self::Op>> {
+        Expr {
             dice: self.dice,
-            expr: EqExpr(self.expr, rhs),
+            op: Eq(self.op, rhs),
         }
     }
 
-    fn cmp(self, rhs: Key) -> Evaluation<CompareExpr<Self::Expr>> {
-        Evaluation {
+    fn cmp(self, rhs: Key) -> Expr<Cmp<Self::Op>> {
+        Expr {
             dice: self.dice,
-            expr: CompareExpr(self.expr, rhs),
+            op: Cmp(self.op, rhs),
         }
     }
 
-    fn add<R>(mut self, mut rhs: Evaluation<R>) -> Evaluation<AddExpr<Self::Expr, R>>
+    fn add<T, R>(mut self, rhs: T) -> Expr<Add<Self::Op, R>>
     where
-        R: Expression,
+        T: Into<Expr<R>>,
+        R: Operation,
     {
-        rhs.expr.shift_identity(self.dice.len());
+        let mut rhs = rhs.into();
+        rhs.op.shift_identity(self.dice.len());
         self.dice.extend(rhs.dice);
-        Evaluation {
+        Expr {
             dice: self.dice,
-            expr: AddExpr(self.expr, rhs.expr),
+            op: Add(self.op, rhs.op),
         }
     }
 
-    fn mul<R>(mut self, mut rhs: Evaluation<R>) -> Evaluation<MulExpr<Self::Expr, R>>
+    fn mul<T, R>(mut self, rhs: T) -> Expr<Mul<Self::Op, R>>
     where
-        R: Expression,
+        T: Into<Expr<R>>,
+        R: Operation,
     {
-        rhs.expr.shift_identity(self.dice.len());
+        let mut rhs = rhs.into();
+        rhs.op.shift_identity(self.dice.len());
         self.dice.extend(rhs.dice);
-        Evaluation {
+        Expr {
             dice: self.dice,
-            expr: MulExpr(self.expr, rhs.expr),
+            op: Mul(self.op, rhs.op),
         }
     }
 
-    fn div<R>(mut self, mut rhs: Evaluation<R>) -> Evaluation<DivExpr<Self::Expr, R>>
+    fn div<T, R>(mut self, rhs: T) -> Expr<Div<Self::Op, R>>
     where
-        R: Expression,
+        T: Into<Expr<R>>,
+        R: Operation,
     {
-        rhs.expr.shift_identity(self.dice.len());
+        let mut rhs = rhs.into();
+        rhs.op.shift_identity(self.dice.len());
         self.dice.extend(rhs.dice);
-        Evaluation {
+        Expr {
             dice: self.dice,
-            expr: DivExpr(self.expr, rhs.expr),
+            op: Div(self.op, rhs.op),
         }
     }
 
-    fn combine<F>(self, size: usize, op: F) -> Evaluation<CombineExpr<Self::Expr>>
+    fn combine<F>(self, size: usize, op: F) -> Expr<Combine<Self::Op>>
     where
-        Self::Expr: Clone,
+        Self::Op: Clone,
         F: Fn(&[Key]) -> Key + 'static,
     {
         let (dice, expr) = self.explode(size);
-        Evaluation {
+        Expr {
             dice,
-            expr: CombineExpr(expr, Box::new(op)),
+            op: Combine(expr, Box::new(op)),
         }
     }
 
-    fn sum(self, size: usize) -> Evaluation<SumExpr<Self::Expr>>
+    fn sum(self, size: usize) -> Expr<Sum<Self::Op>>
     where
-        Self::Expr: Clone,
+        Self::Op: Clone,
     {
         let (dice, expr) = self.explode(size);
-        Evaluation {
+        Expr {
             dice,
-            expr: SumExpr(expr),
+            op: Sum(expr),
         }
     }
 
-    fn product(self, size: usize) -> Evaluation<ProductExpr<Self::Expr>>
+    fn product(self, size: usize) -> Expr<Product<Self::Op>>
     where
-        Self::Expr: Clone,
+        Self::Op: Clone,
     {
         let (dice, expr) = self.explode(size);
-        Evaluation {
+        Expr {
             dice,
-            expr: ProductExpr(expr),
+            op: Product(expr),
         }
     }
 
-    fn branch<L, R>(
-        mut self,
-        mut lhs: Evaluation<L>,
-        mut rhs: Evaluation<R>,
-    ) -> Evaluation<BranchExpr<Self::Expr, L, R>>
+    fn branch<TL, TR, L, R>(mut self, lhs: TL, rhs: TR) -> Expr<Branch<Self::Op, L, R>>
     where
-        L: Expression,
-        R: Expression,
+        TL: Into<Expr<L>>,
+        TR: Into<Expr<R>>,
+        L: Operation,
+        R: Operation,
     {
+        let mut lhs = lhs.into();
+        let mut rhs = rhs.into();
+
         let sl = self.dice.len();
         let ll = lhs.dice.len();
 
         self.dice.extend(lhs.dice);
         self.dice.extend(rhs.dice);
 
-        lhs.expr.shift_identity(sl);
-        rhs.expr.shift_identity(sl + ll);
+        lhs.op.shift_identity(sl);
+        rhs.op.shift_identity(sl + ll);
 
-        Evaluation {
+        Expr {
             dice: self.dice,
-            expr: BranchExpr(self.expr, lhs.expr, rhs.expr),
+            op: Branch(self.op, lhs.op, rhs.op),
         }
     }
 }
 
-impl EvaluationExt for Die {
-    type Expr = IdentityExpr;
+impl ExprExt for Die {
+    type Op = Identity;
 
-    fn map<F>(self, op: F) -> Evaluation<MapExpr<Self::Expr>>
+    fn map<F>(self, op: F) -> Expr<MapExpr<Self::Op>>
     where
         F: Fn(Key) -> Key + 'static,
     {
-        Evaluation::from(self).map(op)
+        Expr::from(self).map(op)
     }
 
-    fn neg(self) -> Evaluation<NegateExpr<Self::Expr>> {
-        Evaluation::from(self).neg()
+    fn neg(self) -> Expr<Negate<Self::Op>> {
+        Expr::from(self).neg()
     }
 
-    fn kadd(self, rhs: Key) -> Evaluation<AddKeyExpr<Self::Expr>> {
-        Evaluation::from(self).kadd(rhs)
+    fn kadd(self, rhs: Key) -> Expr<AddKey<Self::Op>> {
+        Expr::from(self).kadd(rhs)
     }
 
-    fn ksub(self, rhs: Key) -> Evaluation<SubKeyExpr<Self::Expr>> {
-        Evaluation::from(self).ksub(rhs)
+    fn ksub(self, rhs: Key) -> Expr<SubKey<Self::Op>> {
+        Expr::from(self).ksub(rhs)
     }
 
-    fn kmul(self, rhs: Key) -> Evaluation<MulKeyExpr<Self::Expr>> {
-        Evaluation::from(self).kmul(rhs)
+    fn kmul(self, rhs: Key) -> Expr<MulKey<Self::Op>> {
+        Expr::from(self).kmul(rhs)
     }
 
-    fn kdiv(self, rhs: Key) -> Evaluation<DivKeyExpr<Self::Expr>> {
-        Evaluation::from(self).kdiv(rhs)
+    fn kdiv(self, rhs: Key) -> Expr<DivKey<Self::Op>> {
+        Expr::from(self).kdiv(rhs)
     }
 
-    fn not(self) -> Evaluation<NotExpr<Self::Expr>> {
-        Evaluation::from(self).not()
+    fn not(self) -> Expr<Not<Self::Op>> {
+        Expr::from(self).not()
     }
 
-    fn any(self, rhs: Vec<Key>) -> Evaluation<EqExpr<Self::Expr>> {
-        Evaluation::from(self).any(rhs)
+    fn any(self, rhs: Vec<Key>) -> Expr<Eq<Self::Op>> {
+        Expr::from(self).any(rhs)
     }
 
-    fn cmp(self, rhs: Key) -> Evaluation<CompareExpr<Self::Expr>> {
-        Evaluation::from(self).cmp(rhs)
+    fn cmp(self, rhs: Key) -> Expr<Cmp<Self::Op>> {
+        Expr::from(self).cmp(rhs)
     }
 
-    fn add<R>(self, rhs: Evaluation<R>) -> Evaluation<AddExpr<Self::Expr, R>>
+    fn add<T, R>(self, rhs: T) -> Expr<Add<Self::Op, R>>
     where
-        R: Expression,
+        T: Into<Expr<R>>,
+        R: Operation,
     {
-        Evaluation::from(self).add(rhs)
+        Expr::from(self).add(rhs)
     }
 
-    fn mul<R>(self, rhs: Evaluation<R>) -> Evaluation<MulExpr<Self::Expr, R>>
+    fn mul<T, R>(self, rhs: T) -> Expr<Mul<Self::Op, R>>
     where
-        R: Expression,
+        T: Into<Expr<R>>,
+        R: Operation,
     {
-        Evaluation::from(self).mul(rhs)
+        Expr::from(self).mul(rhs)
     }
 
-    fn div<R>(self, rhs: Evaluation<R>) -> Evaluation<DivExpr<Self::Expr, R>>
+    fn div<T, R>(self, rhs: T) -> Expr<Div<Self::Op, R>>
     where
-        R: Expression,
+        T: Into<Expr<R>>,
+        R: Operation,
     {
-        Evaluation::from(self).div(rhs)
+        Expr::from(self).div(rhs)
     }
 
-    fn combine<F>(self, size: usize, op: F) -> Evaluation<CombineExpr<Self::Expr>>
+    fn combine<F>(self, size: usize, op: F) -> Expr<Combine<Self::Op>>
     where
-        Self::Expr: Clone,
+        Self::Op: Clone,
         F: Fn(&[Key]) -> Key + 'static,
     {
-        Evaluation::from(self).combine(size, op)
+        Expr::from(self).combine(size, op)
     }
 
-    fn sum(self, size: usize) -> Evaluation<SumExpr<Self::Expr>>
+    fn sum(self, size: usize) -> Expr<Sum<Self::Op>>
     where
-        Self::Expr: Clone,
+        Self::Op: Clone,
     {
-        Evaluation::from(self).sum(size)
+        Expr::from(self).sum(size)
     }
 
-    fn product(self, size: usize) -> Evaluation<ProductExpr<Self::Expr>>
+    fn product(self, size: usize) -> Expr<Product<Self::Op>>
     where
-        Self::Expr: Clone,
+        Self::Op: Clone,
     {
-        Evaluation::from(self).product(size)
+        Expr::from(self).product(size)
     }
 
-    fn branch<L, R>(
-        self,
-        lhs: Evaluation<L>,
-        rhs: Evaluation<R>,
-    ) -> Evaluation<BranchExpr<Self::Expr, L, R>>
+    fn branch<TL, TR, L, R>(self, lhs: TL, rhs: TR) -> Expr<Branch<Self::Op, L, R>>
     where
-        L: Expression,
-        R: Expression,
+        TL: Into<Expr<L>>,
+        TR: Into<Expr<R>>,
+        L: Operation,
+        R: Operation,
     {
-        Evaluation::from(self).branch(lhs, rhs)
+        Expr::from(self).branch(lhs, rhs)
     }
 }
