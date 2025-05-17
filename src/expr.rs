@@ -2,10 +2,10 @@ use std::cmp::Ordering;
 
 use crate::approx::Approx;
 use crate::die::{Die, OverflowResult};
-use crate::util::{BigUint, Key, Rc, Value};
+use crate::util::{BigUint, FnPtr, Key, Rc, Value};
 
-pub type BoxMapFn = Box<dyn Fn(Key) -> Key + 'static>;
-pub type BoxCombineFn = Box<dyn Fn(&[Key]) -> Key + 'static>;
+pub type MapFnPtr = FnPtr<dyn Fn(Key) -> Key + 'static>;
+pub type CombineFnPtr = FnPtr<dyn Fn(&[Key]) -> Key + 'static>;
 
 #[derive(Clone, Debug)]
 pub struct Expr<T>
@@ -19,7 +19,7 @@ where
 #[derive(Clone, Copy, Debug)]
 pub struct Identity(usize);
 
-pub struct MapExpr<T>(T, BoxMapFn);
+pub struct MapExpr<T>(T, MapFnPtr);
 
 #[derive(Clone, Copy, Debug)]
 pub struct Negate<T>(T);
@@ -54,7 +54,7 @@ pub struct Mul<L, R>(L, R);
 #[derive(Clone, Copy, Debug)]
 pub struct Div<L, R>(L, R);
 
-pub struct Combine<T>(Vec<T>, BoxCombineFn);
+pub struct Combine<T>(Vec<T>, CombineFnPtr);
 
 #[derive(Clone, Debug)]
 pub struct Sum<T>(Vec<T>);
@@ -184,7 +184,7 @@ pub trait ExprExt {
 
 impl<T> Expr<T>
 where
-    T: Operation,
+    T: Operation + Send + Sync,
 {
     pub fn eval(self) -> Die {
         Die::combine(self.dice, move |x| self.op.call(x))
@@ -239,7 +239,7 @@ impl From<Die> for Expr<Identity> {
 
 impl<T> From<Expr<T>> for Die
 where
-    T: Operation,
+    T: Operation + Send + Sync,
 {
     fn from(value: Expr<T>) -> Self {
         value.eval()
@@ -503,7 +503,7 @@ where
     {
         Expr {
             dice: self.dice,
-            op: MapExpr(self.op, Box::new(op)),
+            op: MapExpr(self.op, FnPtr::new(op)),
         }
     }
 
@@ -613,7 +613,7 @@ where
         let (dice, expr) = self.explode(size);
         Expr {
             dice,
-            op: Combine(expr, Box::new(op)),
+            op: Combine(expr, FnPtr::new(op)),
         }
     }
 

@@ -1,11 +1,11 @@
-use std::collections::btree_map::Entry;
-
 use bon::Builder;
 use rand::rngs::ThreadRng;
 use rand::{thread_rng, RngCore};
 
 use crate::die::Die;
-use crate::util::{DieMap, Key, APPROX_ACCURACY, APPROX_MAX_SAMPLE_SIZE, APPROX_MIN_SAMPLE_SIZE};
+use crate::util::{
+    die_map, Entry, Key, APPROX_ACCURACY, APPROX_MAX_SAMPLE_SIZE, APPROX_MIN_SAMPLE_SIZE,
+};
 
 #[derive(Debug, Builder)]
 pub struct Approx<G = ThreadRng>
@@ -37,7 +37,7 @@ where
     where
         F: FnMut(&mut G) -> Key,
     {
-        let mut outcomes = DieMap::new();
+        let mut outcomes = die_map();
         let mut s = 0f64;
         let mut denom = None;
 

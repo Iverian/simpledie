@@ -11,4 +11,5 @@
   ],
   "rust-analyzer.check.command": "clippy",
   "rust-analyzer.debug.engine": "vadimcn.vscode-lldb",
+  "rust-analyzer.cargo.features": "all"
 }
