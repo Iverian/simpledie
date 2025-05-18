@@ -10,3 +10,6 @@ insert_final_newline = true
 
 [*.rs]
 indent_size = 4
+
+[*.ipynb]
+indent_size = 4

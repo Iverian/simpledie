@@ -1,9 +1,9 @@
+use core::f64;
 use std::borrow::Borrow;
 use std::fmt::Debug;
-use std::iter::FusedIterator;
+use std::iter::{FusedIterator, IntoIterator, Zip};
 use std::num::NonZeroU16;
-#[cfg(feature = "parallel")]
-use std::sync::{mpsc, Arc};
+use std::vec;
 
 use itertools::Itertools;
 use num::rational::Ratio;
@@ -13,7 +13,7 @@ use thiserror::Error;
 
 use crate::approx::Approx;
 use crate::util::{
-    die_map, BigInt, BigRatio, DieMap, Entry, Key, Probability, Value, DIRECT_MAX_DENOM,
+    die_map, BigInt, BigRatio, DieList, DieMap, Entry, Key, Value, DIRECT_MAX_DENOM,
 };
 
 #[derive(Debug, Clone)]
@@ -24,13 +24,7 @@ pub struct Die {
 }
 
 #[derive(Debug, Clone)]
-pub struct DieIntoIter {
-    die: Die,
-    index: usize,
-}
-
-#[derive(Debug, Clone)]
-pub struct DieIter<'a> {
+pub struct Iter<'a> {
     die: &'a Die,
     index: usize,
 }
@@ -121,8 +115,8 @@ impl Die {
     }
 
     #[must_use]
-    pub fn iter(&self) -> DieIter<'_> {
-        DieIter {
+    pub fn iter(&self) -> Iter<'_> {
+        Iter {
             die: self,
             index: 0,
         }
@@ -164,28 +158,28 @@ impl Die {
     }
 
     #[must_use]
-    pub fn probabilities<T>(self) -> Option<Vec<(T, f64)>>
-    where
-        T: From<Key>,
-    {
+    pub fn probabilities(&self) -> Vec<(Key, BigRatio)> {
         let d = BigInt::from(self.denom);
-        self.keys
-            .into_iter()
-            .zip(self.outcomes)
+        self.iter()
+            .map(|(k, c)| (k, Ratio::new(c.into(), d.clone())))
+            .collect()
+    }
+
+    #[must_use]
+    pub fn probabilities_f64(&self) -> Vec<(Key, f64)> {
+        let d = BigInt::from(self.denom);
+        self.iter()
             .map(|(k, c)| {
-                Ratio::new(c.into(), d.clone())
-                    .to_f64()
-                    .map(|v| (k.into(), v))
+                (
+                    k,
+                    Ratio::new(c.into(), d.clone()).to_f64().unwrap_or(f64::NAN),
+                )
             })
             .collect()
     }
 
     #[must_use]
-    pub fn mean(&self) -> Option<Probability> {
-        self.mean_ratio().to_f64()
-    }
-
-    fn mean_ratio(&self) -> BigRatio {
+    pub fn mean(&self) -> BigRatio {
         let c = self
             .iter()
             .map(|(k, c)| Self::map_mean(k, c))
@@ -195,12 +189,13 @@ impl Die {
     }
 
     #[must_use]
-    pub fn variance(&self) -> Option<Probability> {
-        self.variance_ratio().to_f64()
+    pub fn mean_f64(&self) -> f64 {
+        self.mean().to_f64().unwrap_or(f64::NAN)
     }
 
-    fn variance_ratio(&self) -> BigRatio {
-        let m = self.mean_ratio();
+    #[must_use]
+    pub fn variance(&self) -> BigRatio {
+        let m = self.mean();
         let c = self
             .iter()
             .map(|(k, c)| Self::map_variance(&m, k, c))
@@ -210,8 +205,13 @@ impl Die {
     }
 
     #[must_use]
-    pub fn stddev(&self) -> Option<Probability> {
-        self.variance().map(Probability::sqrt)
+    pub fn variance_f64(&self) -> f64 {
+        self.variance().to_f64().unwrap_or(f64::NAN)
+    }
+
+    #[must_use]
+    pub fn stddev_f64(&self) -> f64 {
+        self.variance_f64().sqrt()
     }
 
     fn map_mean(k: Key, c: Value) -> BigInt {
@@ -227,104 +227,61 @@ impl Die {
     }
 
     #[must_use]
-    pub fn combine<F, O, Q, V>(dice: V, op: F) -> Die
-    where
-        F: Fn(&[Key]) -> O + Send + Sync,
-        O: Into<Key>,
-        Q: Borrow<Self>,
-        V: Borrow<[Q]>,
-    {
-        let denom = dice
-            .borrow()
-            .iter()
-            .try_fold(1 as Value, |acc, x| acc.checked_mul(x.borrow().denom));
-        match denom {
-            None => Self::combine_approx(Approx::default(), dice, op),
-            Some(x) if x > Value::from(DIRECT_MAX_DENOM) => {
-                Self::combine_approx(Approx::default(), dice, op)
-            }
-            Some(x) => Self::combine_direct(x, dice, op),
-        }
-    }
-
-    pub fn try_combine<F, O, Q, V>(dice: V, op: F) -> OverflowResult<Die>
-    where
-        F: Fn(&[Key]) -> O + Send + Sync,
-        O: Into<Key>,
-        Q: Borrow<Self>,
-        V: Borrow<[Q]>,
-    {
-        let Some(denom) = dice
-            .borrow()
-            .iter()
-            .try_fold(1 as Value, |acc, x| acc.checked_mul(x.borrow().denom)) else {
-                return Err(OverflowError);
-            };
-        Ok(Self::combine_direct(denom, dice, op))
-    }
-
-    #[must_use]
-    pub(crate) fn combine_approx<F, O, Q, V, G>(mut approx: Approx<G>, dice: V, op: F) -> Die
+    pub(crate) fn eval<F, O>(dice: DieList, op: F) -> Die
     where
         F: Fn(&[Key]) -> O,
         O: Into<Key>,
-        Q: Borrow<Self>,
-        V: Borrow<[Q]>,
+    {
+        let denom = dice
+            .iter()
+            .try_fold(1 as Value, |acc, x| acc.checked_mul(x.denom));
+        match denom {
+            None => Self::approx_eval(Approx::default(), &dice, op),
+            Some(x) if x > Value::from(DIRECT_MAX_DENOM) => {
+                Self::approx_eval(Approx::default(), &dice, op)
+            }
+            Some(x) => Self::direct_eval(x, dice, op),
+        }
+    }
+
+    pub(crate) fn try_eval<F, O>(dice: DieList, op: F) -> OverflowResult<Die>
+    where
+        F: Fn(&[Key]) -> O,
+        O: Into<Key>,
+    {
+        let Some(denom) = dice
+            .iter()
+            .try_fold(1 as Value, |acc, x| acc.checked_mul(x.borrow().denom))
+        else {
+            return Err(OverflowError);
+        };
+        Ok(Self::direct_eval(denom, dice, op))
+    }
+
+    #[must_use]
+    pub(crate) fn approx_eval<F, O, G>(mut approx: Approx<G>, dice: &DieList, op: F) -> Die
+    where
+        F: Fn(&[Key]) -> O,
+        O: Into<Key>,
         G: RngCore,
     {
-        let dice = dice.borrow();
         approx.approximate(|rng| {
-            let x: Vec<_> = dice.iter().map(|x| x.borrow().sample(rng)).collect();
+            let x: Vec<_> = dice.iter().map(|x| x.sample(rng)).collect();
             op(x.as_slice()).into()
         })
     }
 
-    #[cfg(not(feature = "parallel"))]
-    #[inline]
     #[must_use]
-    pub(crate) fn combine_direct<F, O, Q, V>(denom: Value, dice: V, op: F) -> Die
+    pub(crate) fn direct_eval<F, O>(denom: Value, dice: DieList, op: F) -> Die
     where
         F: Fn(&[Key]) -> O,
         O: Into<Key>,
-        Q: Borrow<Self>,
-        V: Borrow<[Q]>,
     {
-        Self::combine_direct_single_thread(denom, dice, op)
-    }
-
-    #[cfg(feature = "parallel")]
-    #[inline]
-    #[must_use]
-    pub(crate) fn combine_direct<F, O, Q, V>(denom: Value, dice: V, op: F) -> Die
-    where
-        F: Fn(&[Key]) -> O + Send + Sync,
-        O: Into<Key>,
-        Q: Borrow<Self>,
-        V: Borrow<[Q]>,
-    {
-        use crate::util::PARALLEL_MIN_DENOM;
-
-        if denom < PARALLEL_MIN_DENOM {
-            Self::combine_direct_single_thread(denom, dice, op)
-        } else {
-            Self::combine_direct_parallel(denom, dice, op)
-        }
-    }
-
-    #[must_use]
-    pub(crate) fn combine_direct_single_thread<F, O, Q, V>(denom: Value, dice: V, op: F) -> Die
-    where
-        F: Fn(&[Key]) -> O,
-        O: Into<Key>,
-        Q: Borrow<Self>,
-        V: Borrow<[Q]>,
-    {
-        let dice = dice.borrow();
         let mut outcomes = die_map();
         let mut key = Vec::with_capacity(dice.len());
         for p in dice
-            .iter()
-            .map(|x| x.borrow().iter())
+            .into_iter()
+            .map(IntoIterator::into_iter)
             .multi_cartesian_product()
         {
             key.clear();
@@ -343,96 +300,6 @@ impl Die {
             }
         }
         Die::from_map(denom, outcomes)
-    }
-
-    #[cfg(feature = "parallel")]
-    #[must_use]
-    pub(crate) fn combine_direct_parallel<F, O, Q, V>(denom: Value, dice: V, op: F) -> Die
-    where
-        F: Fn(&[Key]) -> O + Send + Sync,
-        O: Into<Key>,
-        Q: Borrow<Self>,
-        V: Borrow<[Q]>,
-    {
-        use crate::util::PARALLEL_CHUNK_SIZE;
-
-        let dice = dice.borrow();
-
-        let jobs = rayon::current_num_threads();
-        let n = dice.len();
-        let m = dice
-            .iter()
-            .map(|x| x.borrow().keys.len())
-            .product::<usize>();
-        let chunk_size = PARALLEL_CHUNK_SIZE.max(m / jobs);
-
-        let op = Arc::new(op);
-        let combinations = dice
-            .iter()
-            .map(|x| x.borrow().to_owned().into_iter())
-            .multi_cartesian_product();
-        let outcomes = rayon::scope(move |s| {
-            let (tx, rx) = mpsc::channel();
-            for chunk in &combinations.chunks(chunk_size) {
-                let op = op.clone();
-                let tx = tx.clone();
-                let chunk = chunk.collect();
-                s.spawn(move |_| {
-                    tx.send(Self::combine_direct_parallel_chunk(n, &op, chunk))
-                        .ok();
-                });
-            }
-            drop(tx);
-
-            let mut outcomes = die_map();
-            while let Ok(part) = rx.recv() {
-                for (k, v) in part {
-                    match outcomes.entry(k) {
-                        Entry::Vacant(e) => {
-                            e.insert(v);
-                        }
-                        Entry::Occupied(mut e) => {
-                            *e.get_mut() += v;
-                        }
-                    }
-                }
-            }
-
-            outcomes
-        });
-
-        Die::from_map(denom, outcomes)
-    }
-
-    #[cfg(feature = "parallel")]
-    #[must_use]
-    fn combine_direct_parallel_chunk<F, O>(
-        n: usize,
-        op: &Arc<F>,
-        chunk: Vec<Vec<(Key, Value)>>,
-    ) -> DieMap
-    where
-        F: Fn(&[Key]) -> O,
-        O: Into<Key>,
-    {
-        let mut outcomes = die_map();
-        let mut key = vec![0; n];
-        for p in chunk {
-            let mut count = 1;
-            for (i, (k, c)) in p.into_iter().enumerate() {
-                key[i] = k;
-                count *= c;
-            }
-            match outcomes.entry(op(key.as_slice()).into()) {
-                Entry::Vacant(e) => {
-                    e.insert(count);
-                }
-                Entry::Occupied(mut e) => {
-                    *e.get_mut() += count;
-                }
-            }
-        }
-        outcomes
     }
 
     #[must_use]
@@ -454,27 +321,26 @@ impl Die {
 impl IntoIterator for Die {
     type Item = (Key, Value);
 
-    type IntoIter = DieIntoIter;
+    type IntoIter = Zip<vec::IntoIter<Key>, vec::IntoIter<Value>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        DieIntoIter {
-            die: self,
-            index: 0,
-        }
+        let keys = self.keys;
+        let outcomes = self.outcomes;
+        keys.into_iter().zip(outcomes)
     }
 }
 
 impl<'a> IntoIterator for &'a Die {
     type Item = (Key, Value);
 
-    type IntoIter = DieIter<'a>;
+    type IntoIter = Iter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
 }
 
-impl Iterator for DieIntoIter {
+impl Iterator for Iter<'_> {
     type Item = (Key, Value);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -488,20 +354,4 @@ impl Iterator for DieIntoIter {
     }
 }
 
-impl FusedIterator for DieIntoIter {}
-
-impl Iterator for DieIter<'_> {
-    type Item = (Key, Value);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index == self.die.keys.len() {
-            None
-        } else {
-            let item = (self.die.keys[self.index], self.die.outcomes[self.index]);
-            self.index += 1;
-            Some(item)
-        }
-    }
-}
-
-impl FusedIterator for DieIter<'_> {}
+impl FusedIterator for Iter<'_> {}
