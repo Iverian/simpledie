@@ -68,7 +68,6 @@ pub struct CombineTwo<L, R, F>(L, R, F);
 #[derive(Clone, Copy, Debug)]
 pub struct CombineThree<T1, T2, T3, F>(T1, T2, T3, F);
 
-#[derive(Clone)]
 pub struct Combine<F>(Vec<OpPtr>, F);
 
 #[derive(Default)]
@@ -123,9 +122,10 @@ pub trait ExprExt: IntoExpr + Sized {
         self.into_expr().approx_eval(approx)
     }
 
-    fn map<F>(self, op: F) -> Expr<Map<Self::Op, F>>
+    fn map<F, O>(self, op: F) -> Expr<Map<Self::Op, F>>
     where
-        F: Fn(Key) -> Key + 'static,
+        F: Fn(Key) -> O,
+        O: Into<Key>,
     {
         let me = self.into_expr();
         Expr {
@@ -301,10 +301,11 @@ pub trait ExprExt: IntoExpr + Sized {
         }
     }
 
-    fn fold<F>(self, size: usize, op: F) -> Expr<Fold<Self::Op, F>>
+    fn fold<F, O>(self, size: usize, op: F) -> Expr<Fold<Self::Op, F>>
     where
         Self::Op: Clone,
-        F: Fn(&[Key]) -> Key + 'static,
+        F: Fn(&[Key]) -> O,
+        O: Into<Key>,
     {
         let (dice, expr) = self.into_expr().explode(size);
         Expr {
@@ -313,10 +314,11 @@ pub trait ExprExt: IntoExpr + Sized {
         }
     }
 
-    fn combine_two<T, F>(self, rhs: T, op: F) -> Expr<CombineTwo<Self::Op, T::Op, F>>
+    fn combine_two<T, F, O>(self, rhs: T, op: F) -> Expr<CombineTwo<Self::Op, T::Op, F>>
     where
         T: IntoExpr,
-        F: Fn(Key, Key) -> Key + 'static,
+        F: Fn(Key, Key) -> O,
+        O: Into<Key>,
     {
         let mut me = self.into_expr();
         let mut rhs = rhs.into_expr();
@@ -329,7 +331,7 @@ pub trait ExprExt: IntoExpr + Sized {
     }
 
     #[allow(clippy::type_complexity)]
-    fn combine_three<T1, T2, F>(
+    fn combine_three<T1, T2, F, O>(
         self,
         f: T1,
         s: T2,
@@ -338,7 +340,8 @@ pub trait ExprExt: IntoExpr + Sized {
     where
         T1: IntoExpr,
         T2: IntoExpr,
-        F: Fn(Key, Key, Key) -> Key + 'static,
+        F: Fn(Key, Key, Key) -> O,
+        O: Into<Key>,
     {
         let mut me = self.into_expr();
         let mut f = f.into_expr();
@@ -358,7 +361,7 @@ pub trait ExprExt: IntoExpr + Sized {
         Self::Op: 'static,
     {
         let me = self.into_expr();
-        CombineBuilder(me.dice, vec![cell(me.op)])
+        CombineBuilder(me.dice, vec![Box::new(me.op)])
     }
 
     fn sum(self, size: usize) -> Expr<Sum<Self::Op>>
@@ -405,7 +408,7 @@ pub trait ExprExt: IntoExpr + Sized {
     fn any<F>(self, size: usize, pred: F) -> Expr<Any<Self::Op, F>>
     where
         Self::Op: Clone,
-        F: Fn(Key) -> bool + 'static,
+        F: Fn(Key) -> bool,
     {
         let (dice, op) = self.into_expr().explode(size);
         Expr {
@@ -417,7 +420,7 @@ pub trait ExprExt: IntoExpr + Sized {
     fn all<F>(self, size: usize, pred: F) -> Expr<All<Self::Op, F>>
     where
         Self::Op: Clone,
-        F: Fn(Key) -> bool + 'static,
+        F: Fn(Key) -> bool,
     {
         let (dice, op) = self.into_expr().explode(size);
         Expr {
@@ -639,13 +642,14 @@ impl Operation for Index {
     }
 }
 
-impl<T, F> Operation for Map<T, F>
+impl<T, F, O> Operation for Map<T, F>
 where
     T: Operation,
-    F: Fn(Key) -> Key,
+    F: Fn(Key) -> O,
+    O: Into<Key>,
 {
     fn call(&self, values: &[Key]) -> Key {
-        self.1(self.0.call(values))
+        self.1(self.0.call(values)).into()
     }
 
     fn shift_indices(&mut self, value: usize) {
@@ -833,10 +837,11 @@ where
     }
 }
 
-impl<T, F> Operation for Fold<T, F>
+impl<T, F, O> Operation for Fold<T, F>
 where
     T: Operation,
-    F: Fn(&[Key]) -> Key,
+    F: Fn(&[Key]) -> O,
+    O: Into<Key>,
 {
     fn call(&self, values: &[Key]) -> Key {
         self.1(
@@ -846,6 +851,7 @@ where
                 .collect::<Vec<_>>()
                 .as_slice(),
         )
+        .into()
     }
 
     fn shift_indices(&mut self, value: usize) {
@@ -855,14 +861,15 @@ where
     }
 }
 
-impl<L, R, F> Operation for CombineTwo<L, R, F>
+impl<L, R, F, O> Operation for CombineTwo<L, R, F>
 where
     L: Operation,
     R: Operation,
-    F: Fn(Key, Key) -> Key + 'static,
+    F: Fn(Key, Key) -> O,
+    O: Into<Key>,
 {
     fn call(&self, values: &[Key]) -> Key {
-        self.2(self.0.call(values), self.1.call(values))
+        self.2(self.0.call(values), self.1.call(values)).into()
     }
 
     fn shift_indices(&mut self, value: usize) {
@@ -871,12 +878,13 @@ where
     }
 }
 
-impl<T1, T2, T3, F> Operation for CombineThree<T1, T2, T3, F>
+impl<T1, T2, T3, F, O> Operation for CombineThree<T1, T2, T3, F>
 where
     T1: Operation,
     T2: Operation,
     T3: Operation,
-    F: Fn(Key, Key, Key) -> Key + 'static,
+    F: Fn(Key, Key, Key) -> O,
+    O: Into<Key>,
 {
     fn call(&self, values: &[Key]) -> Key {
         self.3(
@@ -884,6 +892,7 @@ where
             self.1.call(values),
             self.2.call(values),
         )
+        .into()
     }
 
     fn shift_indices(&mut self, value: usize) {
@@ -893,23 +902,25 @@ where
     }
 }
 
-impl<F> Operation for Combine<F>
+impl<F, O> Operation for Combine<F>
 where
-    F: Fn(&[Key]) -> Key,
+    F: Fn(&[Key]) -> O,
+    O: Into<Key>,
 {
     fn call(&self, values: &[Key]) -> Key {
         self.1(
             self.0
                 .iter()
-                .map(|x| x.borrow().call(values))
+                .map(|x| x.call(values))
                 .collect::<Vec<_>>()
                 .as_slice(),
         )
+        .into()
     }
 
     fn shift_indices(&mut self, value: usize) {
         for x in &mut self.0 {
-            x.borrow_mut().shift_indices(value);
+            x.shift_indices(value);
         }
     }
 }
@@ -924,7 +935,7 @@ impl CombineBuilder {
         let mut expr = expr.into_expr();
         self.0.extend(expr.dice);
         expr.op.shift_indices(self.0.len());
-        self.1.push(cell(expr.op));
+        self.1.push(Box::new(expr.op));
         self
     }
 
@@ -939,7 +950,7 @@ impl CombineBuilder {
             let mut i = i.into_expr();
             i.op.shift_indices(self.0.len());
             self.0.extend(i.dice);
-            self.1.push(cell(i.op));
+            self.1.push(Box::new(i.op));
         }
         self
     }

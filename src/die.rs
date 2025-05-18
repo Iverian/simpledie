@@ -227,10 +227,9 @@ impl Die {
     }
 
     #[must_use]
-    pub(crate) fn eval<F, O>(dice: DieList, op: F) -> Die
+    pub(crate) fn eval<F>(dice: DieList, op: F) -> Die
     where
-        F: Fn(&[Key]) -> O,
-        O: Into<Key>,
+        F: Fn(&[Key]) -> Key,
     {
         let denom = dice
             .iter()
@@ -244,10 +243,9 @@ impl Die {
         }
     }
 
-    pub(crate) fn try_eval<F, O>(dice: DieList, op: F) -> OverflowResult<Die>
+    pub(crate) fn try_eval<F>(dice: DieList, op: F) -> OverflowResult<Die>
     where
-        F: Fn(&[Key]) -> O,
-        O: Into<Key>,
+        F: Fn(&[Key]) -> Key,
     {
         let Some(denom) = dice
             .iter()
@@ -259,23 +257,21 @@ impl Die {
     }
 
     #[must_use]
-    pub(crate) fn approx_eval<F, O, G>(mut approx: Approx<G>, dice: &DieList, op: F) -> Die
+    pub(crate) fn approx_eval<F, G>(mut approx: Approx<G>, dice: &DieList, op: F) -> Die
     where
-        F: Fn(&[Key]) -> O,
-        O: Into<Key>,
+        F: Fn(&[Key]) -> Key,
         G: RngCore,
     {
         approx.approximate(|rng| {
             let x: Vec<_> = dice.iter().map(|x| x.sample(rng)).collect();
-            op(x.as_slice()).into()
+            op(x.as_slice())
         })
     }
 
     #[must_use]
-    pub(crate) fn direct_eval<F, O>(denom: Value, dice: DieList, op: F) -> Die
+    pub(crate) fn direct_eval<F>(denom: Value, dice: DieList, op: F) -> Die
     where
-        F: Fn(&[Key]) -> O,
-        O: Into<Key>,
+        F: Fn(&[Key]) -> Key,
     {
         let mut outcomes = die_map();
         let mut key = Vec::with_capacity(dice.len());
@@ -290,7 +286,7 @@ impl Die {
                 key.push(k);
                 count *= c;
             }
-            match outcomes.entry(op(key.as_slice()).into()) {
+            match outcomes.entry(op(key.as_slice())) {
                 Entry::Vacant(e) => {
                     e.insert(count);
                 }
