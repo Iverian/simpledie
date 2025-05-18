@@ -4,7 +4,7 @@ use crate::approx::Approx;
 use crate::die::{Die, OverflowResult};
 use crate::util::{cell, BigUint, Cell, DieList, Key, Value};
 
-type OpPtr = Cell<dyn Operation + 'static>;
+type OpPtr = Box<dyn Operation + 'static>;
 
 #[derive(Clone, Debug)]
 pub struct Expr<T = Index>
