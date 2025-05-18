@@ -7,9 +7,9 @@ use crate::util::{cell, BigUint, Cell, DieList, Key, Value};
 type OpPtr = Box<dyn Operation + 'static>;
 
 #[derive(Clone, Debug)]
-pub struct Expr<T = Index>
+pub struct Composite<T = Index>
 where
-    T: Operation,
+    T: Operation + 'static,
 {
     dice: DieList,
     op: T,
@@ -102,229 +102,232 @@ pub trait Operation {
     fn shift_indices(&mut self, value: usize);
 }
 
-pub trait IntoExpr {
+pub trait Expr: Sized {
     type Op: Operation + 'static;
 
-    fn into_expr(self) -> Expr<Self::Op>;
-}
+    fn into_composite(self) -> Composite<Self::Op>;
 
-#[allow(clippy::module_name_repetitions)]
-pub trait ExprExt: IntoExpr + Sized {
     fn eval(self) -> Die {
-        self.into_expr().eval()
+        self.into_composite().eval()
     }
 
     fn try_eval(self) -> OverflowResult<Die> {
-        self.into_expr().try_eval()
+        self.into_composite().try_eval()
     }
 
     fn approx_eval(self, approx: Approx) -> Die {
-        self.into_expr().approx_eval(approx)
+        self.into_composite().approx_eval(approx)
     }
 
-    fn map<F, O>(self, op: F) -> Expr<Map<Self::Op, F>>
+    fn map<F, O>(self, op: F) -> Composite<Map<Self::Op, F>>
     where
         F: Fn(Key) -> O,
         O: Into<Key>,
     {
-        let me = self.into_expr();
-        Expr {
+        let me = self.into_composite();
+        Composite {
             dice: me.dice,
             op: Map(me.op, op),
         }
     }
 
-    fn neg(self) -> Expr<Negate<Self::Op>> {
-        let me = self.into_expr();
-        Expr {
+    fn neg(self) -> Composite<Negate<Self::Op>> {
+        let me = self.into_composite();
+        Composite {
             dice: me.dice,
             op: Negate(me.op),
         }
     }
 
-    fn kadd(self, rhs: Key) -> Expr<AddKey<Self::Op>> {
-        let me = self.into_expr();
-        Expr {
+    fn kadd(self, rhs: Key) -> Composite<AddKey<Self::Op>> {
+        let me = self.into_composite();
+        Composite {
             dice: me.dice,
             op: AddKey(me.op, rhs),
         }
     }
 
-    fn ksub(self, rhs: Key) -> Expr<SubKey<Self::Op>> {
-        let me = self.into_expr();
-        Expr {
+    fn ksub(self, rhs: Key) -> Composite<SubKey<Self::Op>> {
+        let me = self.into_composite();
+        Composite {
             dice: me.dice,
             op: SubKey(me.op, rhs),
         }
     }
 
-    fn kmul(self, rhs: Key) -> Expr<MulKey<Self::Op>> {
-        let me = self.into_expr();
-        Expr {
+    fn kmul(self, rhs: Key) -> Composite<MulKey<Self::Op>> {
+        let me = self.into_composite();
+        Composite {
             dice: me.dice,
             op: MulKey(me.op, rhs),
         }
     }
 
-    fn kdiv(self, rhs: Key) -> Expr<DivKey<Self::Op>> {
-        let me = self.into_expr();
-        Expr {
+    fn kdiv(self, rhs: Key) -> Composite<DivKey<Self::Op>> {
+        let me = self.into_composite();
+        Composite {
             dice: me.dice,
             op: DivKey(me.op, rhs),
         }
     }
 
-    fn not(self) -> Expr<Not<Self::Op>> {
-        let me = self.into_expr();
-        Expr {
+    fn not(self) -> Composite<Not<Self::Op>> {
+        let me = self.into_composite();
+        Composite {
             dice: me.dice,
             op: Not(me.op),
         }
     }
 
-    fn contains(self, rhs: Vec<Key>) -> Expr<Eq<Self::Op>> {
-        let me = self.into_expr();
-        Expr {
+    fn contains(self, rhs: Vec<Key>) -> Composite<Eq<Self::Op>> {
+        let me = self.into_composite();
+        Composite {
             dice: me.dice,
             op: Eq(me.op, rhs),
         }
     }
 
-    fn eq(self, rhs: Key) -> Expr<Eq<Self::Op>> {
+    fn eq(self, rhs: Key) -> Composite<Eq<Self::Op>> {
         self.contains(vec![rhs])
     }
 
-    fn neq(self, rhs: Key) -> Expr<Not<Eq<Self::Op>>> {
+    fn neq(self, rhs: Key) -> Composite<Not<Eq<Self::Op>>>
+    where
+        Self::Op: 'static,
+    {
         self.eq(rhs).not()
     }
 
-    fn cmp(self, rhs: Key) -> Expr<Cmp<Self::Op>> {
-        let me = self.into_expr();
-        Expr {
+    fn cmp(self, rhs: Key) -> Composite<Cmp<Self::Op>> {
+        let me = self.into_composite();
+        Composite {
             dice: me.dice,
             op: Cmp(me.op, rhs),
         }
     }
 
-    fn lt(self, rhs: Key) -> Expr<Eq<Cmp<Self::Op>>> {
+    fn lt(self, rhs: Key) -> Composite<Eq<Cmp<Self::Op>>>
+    where
+        Self::Op: 'static,
+    {
         self.cmp(rhs).eq(Ordering::Less as Key)
     }
 
-    fn le(self, rhs: Key) -> Expr<Eq<Cmp<Self::Op>>> {
+    fn le(self, rhs: Key) -> Composite<Eq<Cmp<Self::Op>>> {
         self.cmp(rhs)
             .contains(vec![Ordering::Less as Key, Ordering::Equal as Key])
     }
 
-    fn gt(self, rhs: Key) -> Expr<Eq<Cmp<Self::Op>>> {
+    fn gt(self, rhs: Key) -> Composite<Eq<Cmp<Self::Op>>> {
         self.cmp(rhs).eq(Ordering::Greater as Key)
     }
 
-    fn ge(self, rhs: Key) -> Expr<Eq<Cmp<Self::Op>>> {
+    fn ge(self, rhs: Key) -> Composite<Eq<Cmp<Self::Op>>> {
         self.cmp(rhs)
             .contains(vec![Ordering::Greater as Key, Ordering::Equal as Key])
     }
 
-    fn add<T>(self, rhs: T) -> Expr<Add<Self::Op, T::Op>>
+    fn add<T>(self, rhs: T) -> Composite<Add<Self::Op, T::Op>>
     where
-        T: IntoExpr,
+        T: Expr,
     {
-        let mut me = self.into_expr();
-        let mut rhs = rhs.into_expr();
+        let mut me = self.into_composite();
+        let mut rhs = rhs.into_composite();
         rhs.op.shift_indices(me.dice.len());
         me.dice.extend(rhs.dice);
-        Expr {
+        Composite {
             dice: me.dice,
             op: Add(me.op, rhs.op),
         }
     }
 
-    fn sub<T>(self, rhs: T) -> Expr<Add<Self::Op, Negate<T::Op>>>
+    fn sub<T>(self, rhs: T) -> Composite<Add<Self::Op, Negate<T::Op>>>
     where
-        T: IntoExpr,
+        T: Expr,
     {
-        self.add(rhs.into_expr().neg())
+        self.add(rhs.into_composite().neg())
     }
 
-    fn mul<T>(self, rhs: T) -> Expr<Mul<Self::Op, T::Op>>
+    fn mul<T>(self, rhs: T) -> Composite<Mul<Self::Op, T::Op>>
     where
-        T: IntoExpr,
+        T: Expr,
     {
-        let mut me = self.into_expr();
-        let mut rhs = rhs.into_expr();
+        let mut me = self.into_composite();
+        let mut rhs = rhs.into_composite();
         rhs.op.shift_indices(me.dice.len());
         me.dice.extend(rhs.dice);
-        Expr {
+        Composite {
             dice: me.dice,
             op: Mul(me.op, rhs.op),
         }
     }
 
-    fn div<T>(self, rhs: T) -> Expr<Div<Self::Op, T::Op>>
+    fn div<T>(self, rhs: T) -> Composite<Div<Self::Op, T::Op>>
     where
-        T: IntoExpr,
+        T: Expr,
     {
-        let mut me = self.into_expr();
-        let mut rhs = rhs.into_expr();
+        let mut me = self.into_composite();
+        let mut rhs = rhs.into_composite();
         rhs.op.shift_indices(me.dice.len());
         me.dice.extend(rhs.dice);
-        Expr {
+        Composite {
             dice: me.dice,
             op: Div(me.op, rhs.op),
         }
     }
 
-    fn min<T>(self, rhs: T) -> Expr<Min<Self::Op, T::Op>>
+    fn min<T>(self, rhs: T) -> Composite<Min<Self::Op, T::Op>>
     where
-        T: IntoExpr,
+        T: Expr,
     {
-        let mut me = self.into_expr();
-        let mut rhs = rhs.into_expr();
+        let mut me = self.into_composite();
+        let mut rhs = rhs.into_composite();
         rhs.op.shift_indices(me.dice.len());
         me.dice.extend(rhs.dice);
-        Expr {
+        Composite {
             dice: me.dice,
             op: Min(me.op, rhs.op),
         }
     }
 
-    fn max<T>(self, rhs: T) -> Expr<Max<Self::Op, T::Op>>
+    fn max<T>(self, rhs: T) -> Composite<Max<Self::Op, T::Op>>
     where
-        T: IntoExpr,
+        T: Expr,
     {
-        let mut me = self.into_expr();
-        let mut rhs = rhs.into_expr();
+        let mut me = self.into_composite();
+        let mut rhs = rhs.into_composite();
         rhs.op.shift_indices(me.dice.len());
         me.dice.extend(rhs.dice);
-        Expr {
+        Composite {
             dice: me.dice,
             op: Max(me.op, rhs.op),
         }
     }
 
-    fn fold<F, O>(self, size: usize, op: F) -> Expr<Fold<Self::Op, F>>
+    fn fold<F, O>(self, size: usize, op: F) -> Composite<Fold<Self::Op, F>>
     where
         Self::Op: Clone,
         F: Fn(&[Key]) -> O,
         O: Into<Key>,
     {
-        let (dice, expr) = self.into_expr().explode(size);
-        Expr {
+        let (dice, expr) = self.into_composite().explode(size);
+        Composite {
             dice,
             op: Fold(expr, op),
         }
     }
 
-    fn combine_two<T, F, O>(self, rhs: T, op: F) -> Expr<CombineTwo<Self::Op, T::Op, F>>
+    fn combine_two<T, F, O>(self, rhs: T, op: F) -> Composite<CombineTwo<Self::Op, T::Op, F>>
     where
-        T: IntoExpr,
+        T: Expr,
         F: Fn(Key, Key) -> O,
         O: Into<Key>,
     {
-        let mut me = self.into_expr();
-        let mut rhs = rhs.into_expr();
+        let mut me = self.into_composite();
+        let mut rhs = rhs.into_composite();
         rhs.op.shift_indices(me.dice.len());
         me.dice.extend(rhs.dice);
-        Expr {
+        Composite {
             dice: me.dice,
             op: CombineTwo(me.op, rhs.op, op),
         }
@@ -336,222 +339,279 @@ pub trait ExprExt: IntoExpr + Sized {
         f: T1,
         s: T2,
         op: F,
-    ) -> Expr<CombineThree<Self::Op, T1::Op, T2::Op, F>>
+    ) -> Composite<CombineThree<Self::Op, T1::Op, T2::Op, F>>
     where
-        T1: IntoExpr,
-        T2: IntoExpr,
+        T1: Expr,
+        T2: Expr,
         F: Fn(Key, Key, Key) -> O,
         O: Into<Key>,
     {
-        let mut me = self.into_expr();
-        let mut f = f.into_expr();
-        let mut s = s.into_expr();
+        let mut me = self.into_composite();
+        let mut f = f.into_composite();
+        let mut s = s.into_composite();
         f.op.shift_indices(me.dice.len());
         me.dice.extend(f.dice);
         s.op.shift_indices(me.dice.len());
         me.dice.extend(s.dice);
-        Expr {
+        Composite {
             dice: me.dice,
             op: CombineThree(me.op, f.op, s.op, op),
         }
     }
 
-    fn combine(self) -> CombineBuilder
-    where
-        Self::Op: 'static,
-    {
-        let me = self.into_expr();
+    fn combine(self) -> CombineBuilder {
+        let me = self.into_composite();
         CombineBuilder(me.dice, vec![Box::new(me.op)])
     }
 
-    fn sum(self, size: usize) -> Expr<Sum<Self::Op>>
+    fn sum(self, size: usize) -> Composite<Sum<Self::Op>>
     where
         Self::Op: Clone,
     {
-        let (dice, op) = self.into_expr().explode(size);
-        Expr { dice, op: Sum(op) }
+        let (dice, op) = self.into_composite().explode(size);
+        Composite { dice, op: Sum(op) }
     }
 
-    fn product(self, size: usize) -> Expr<Product<Self::Op>>
+    fn product(self, size: usize) -> Composite<Product<Self::Op>>
     where
         Self::Op: Clone,
     {
-        let (dice, op) = self.into_expr().explode(size);
-        Expr {
+        let (dice, op) = self.into_composite().explode(size);
+        Composite {
             dice,
             op: Product(op),
         }
     }
 
-    fn min_of(self, size: usize) -> Expr<MinOf<Self::Op>>
+    fn min_of(self, size: usize) -> Composite<MinOf<Self::Op>>
     where
         Self::Op: Clone,
     {
-        let (dice, op) = self.into_expr().explode(size);
-        Expr {
+        let (dice, op) = self.into_composite().explode(size);
+        Composite {
             dice,
             op: MinOf(op),
         }
     }
 
-    fn max_of(self, size: usize) -> Expr<MaxOf<Self::Op>>
+    fn max_of(self, size: usize) -> Composite<MaxOf<Self::Op>>
     where
         Self::Op: Clone,
     {
-        let (dice, op) = self.into_expr().explode(size);
-        Expr {
+        let (dice, op) = self.into_composite().explode(size);
+        Composite {
             dice,
             op: MaxOf(op),
         }
     }
 
-    fn any<F>(self, size: usize, pred: F) -> Expr<Any<Self::Op, F>>
+    fn any<F>(self, size: usize, pred: F) -> Composite<Any<Self::Op, F>>
     where
         Self::Op: Clone,
         F: Fn(Key) -> bool,
     {
-        let (dice, op) = self.into_expr().explode(size);
-        Expr {
+        let (dice, op) = self.into_composite().explode(size);
+        Composite {
             dice,
             op: Any(op, pred),
         }
     }
 
-    fn all<F>(self, size: usize, pred: F) -> Expr<All<Self::Op, F>>
+    fn all<F>(self, size: usize, pred: F) -> Composite<All<Self::Op, F>>
     where
         Self::Op: Clone,
         F: Fn(Key) -> bool,
     {
-        let (dice, op) = self.into_expr().explode(size);
-        Expr {
+        let (dice, op) = self.into_composite().explode(size);
+        Composite {
             dice,
             op: All(op, pred),
         }
     }
 
     #[allow(clippy::type_complexity)]
-    fn branch<F, L, R>(self, pred: F, lhs: L, rhs: R) -> Expr<Branch<F, Self::Op, L::Op, R::Op>>
+    fn branch<F, L, R>(
+        self,
+        pred: F,
+        lhs: L,
+        rhs: R,
+    ) -> Composite<Branch<F, Self::Op, L::Op, R::Op>>
     where
         F: Fn(Key) -> bool,
-        L: IntoExpr,
-        R: IntoExpr,
+        L: Expr,
+        R: Expr,
     {
-        let mut me = self.into_expr();
-        let mut lhs = lhs.into_expr();
-        let mut rhs = rhs.into_expr();
+        let mut me = self.into_composite();
+        let mut lhs = lhs.into_composite();
+        let mut rhs = rhs.into_composite();
 
         lhs.op.shift_indices(me.dice.len());
         me.dice.extend(lhs.dice);
         rhs.op.shift_indices(me.dice.len());
         me.dice.extend(rhs.dice);
 
-        Expr {
+        Composite {
             dice: me.dice,
             op: Branch(pred, me.op, lhs.op, rhs.op),
         }
     }
 
-    fn erase(self) -> Expr<Erased>
+    fn erase(self) -> Composite<Erased>
     where
         Self::Op: 'static,
     {
-        let me = self.into_expr();
-        Expr {
+        let me = self.into_composite();
+        Composite {
             dice: me.dice,
             op: Erased(cell(me.op)),
         }
     }
 }
 
-impl Expr {
+impl Composite {
     #[must_use]
     pub fn combine() -> CombineBuilder {
         CombineBuilder::default()
     }
 
+    pub fn combine_two<T1, T2, F, O>(
+        e1: T1,
+        e2: T2,
+        op: F,
+    ) -> Composite<CombineTwo<T1::Op, T2::Op, F>>
+    where
+        T1: Expr,
+        T2: Expr,
+        F: Fn(Key, Key) -> O,
+        O: Into<Key>,
+    {
+        let e1 = e1.into_composite();
+        let mut e2 = e2.into_composite();
+
+        let mut dice = e1.dice;
+        e2.op.shift_indices(dice.len());
+        dice.extend(e2.dice);
+
+        Composite {
+            dice,
+            op: CombineTwo(e1.op, e2.op, op),
+        }
+    }
+
+    #[allow(clippy::type_complexity)]
+    pub fn combine_three<T1, T2, T3, F, O>(
+        e1: T1,
+        e2: T2,
+        e3: T3,
+        op: F,
+    ) -> Composite<CombineThree<T1::Op, T2::Op, T3::Op, F>>
+    where
+        T1: Expr,
+        T2: Expr,
+        T3: Expr,
+        F: Fn(Key, Key, Key) -> O,
+        O: Into<Key>,
+    {
+        let e1 = e1.into_composite();
+        let mut e2 = e2.into_composite();
+        let mut e3 = e3.into_composite();
+
+        let mut dice = e1.dice;
+        dice.reserve(e2.dice.len() + e3.dice.len());
+        e2.op.shift_indices(dice.len());
+        dice.extend(e2.dice);
+        e3.op.shift_indices(dice.len());
+        dice.extend(e3.dice);
+
+        Composite {
+            dice,
+            op: CombineThree(e1.op, e2.op, e3.op, op),
+        }
+    }
+
     #[must_use]
-    pub fn fold<F, I, E>(iter: I, op: F) -> Expr<Fold<E::Op, F>>
+    pub fn fold<F, I, E>(iter: I, op: F) -> Composite<Fold<E::Op, F>>
     where
         F: Fn(&[Key]) -> Key,
         I: IntoIterator<Item = E>,
-        E: IntoExpr,
+        E: Expr,
     {
         let (dice, items) = Self::parts(iter);
-        Expr {
+        Composite {
             dice,
             op: Fold(items, op),
         }
     }
 
-    pub fn sum<I, E>(iter: I) -> Expr<Sum<E::Op>>
+    pub fn sum<I, E>(iter: I) -> Composite<Sum<E::Op>>
     where
         I: IntoIterator<Item = E>,
-        E: IntoExpr,
+        E: Expr,
     {
         let (dice, items) = Self::parts(iter);
-        Expr {
+        Composite {
             dice,
             op: Sum(items),
         }
     }
 
-    pub fn product<I, E>(iter: I) -> Expr<Product<E::Op>>
+    pub fn product<I, E>(iter: I) -> Composite<Product<E::Op>>
     where
         I: IntoIterator<Item = E>,
-        E: IntoExpr,
+        E: Expr,
     {
         let (dice, items) = Self::parts(iter);
-        Expr {
+        Composite {
             dice,
             op: Product(items),
         }
     }
 
-    pub fn min_of<I, E>(iter: I) -> Expr<MinOf<E::Op>>
+    pub fn min_of<I, E>(iter: I) -> Composite<MinOf<E::Op>>
     where
         I: IntoIterator<Item = E>,
-        E: IntoExpr,
+        E: Expr,
     {
         let (dice, items) = Self::parts(iter);
-        Expr {
+        Composite {
             dice,
             op: MinOf(items),
         }
     }
 
-    pub fn max_of<I, E>(iter: I) -> Expr<MaxOf<E::Op>>
+    pub fn max_of<I, E>(iter: I) -> Composite<MaxOf<E::Op>>
     where
         I: IntoIterator<Item = E>,
-        E: IntoExpr,
+        E: Expr,
     {
         let (dice, items) = Self::parts(iter);
-        Expr {
+        Composite {
             dice,
             op: MaxOf(items),
         }
     }
 
-    pub fn any<I, E, F>(iter: I, pred: F) -> Expr<Any<E::Op, F>>
+    pub fn any<I, E, F>(iter: I, pred: F) -> Composite<Any<E::Op, F>>
     where
         I: IntoIterator<Item = E>,
-        E: IntoExpr,
+        E: Expr,
         F: Fn(Key) -> bool,
     {
         let (dice, items) = Self::parts(iter);
-        Expr {
+        Composite {
             dice,
             op: Any(items, pred),
         }
     }
 
-    pub fn all<I, E, F>(iter: I, pred: F) -> Expr<All<E::Op, F>>
+    pub fn all<I, E, F>(iter: I, pred: F) -> Composite<All<E::Op, F>>
     where
         I: IntoIterator<Item = E>,
-        E: IntoExpr,
+        E: Expr,
         F: Fn(Key) -> bool,
     {
         let (dice, items) = Self::parts(iter);
-        Expr {
+        Composite {
             dice,
             op: All(items, pred),
         }
@@ -560,7 +620,7 @@ impl Expr {
     fn parts<I, E>(iter: I) -> (Vec<Die>, Vec<E::Op>)
     where
         I: IntoIterator<Item = E>,
-        E: IntoExpr,
+        E: Expr,
     {
         let iter = iter.into_iter();
         let (l, u) = iter.size_hint();
@@ -568,7 +628,7 @@ impl Expr {
         let mut dice = Vec::with_capacity(s);
         let mut items = Vec::with_capacity(s);
         for i in iter {
-            let mut i = i.into_expr();
+            let mut i = i.into_composite();
             i.op.shift_indices(dice.len());
             dice.extend(i.dice);
             items.push(i.op);
@@ -577,7 +637,7 @@ impl Expr {
     }
 }
 
-impl<T> Expr<T>
+impl<T> Composite<T>
 where
     T: Operation,
 {
@@ -605,7 +665,7 @@ where
     }
 }
 
-impl<T> Expr<T>
+impl<T> Composite<T>
 where
     T: Operation + Clone,
 {
@@ -929,10 +989,10 @@ impl CombineBuilder {
     #[must_use]
     pub fn push<TR, R>(mut self, expr: TR) -> Self
     where
-        TR: IntoExpr<Op = R>,
+        TR: Expr<Op = R>,
         R: Operation + 'static,
     {
-        let mut expr = expr.into_expr();
+        let mut expr = expr.into_composite();
         self.0.extend(expr.dice);
         expr.op.shift_indices(self.0.len());
         self.1.push(Box::new(expr.op));
@@ -943,11 +1003,11 @@ impl CombineBuilder {
     pub fn extend<I, TR, R>(mut self, iter: I) -> Self
     where
         I: IntoIterator<Item = TR>,
-        TR: IntoExpr<Op = R>,
+        TR: Expr<Op = R>,
         R: Operation + 'static,
     {
         for i in iter {
-            let mut i = i.into_expr();
+            let mut i = i.into_composite();
             i.op.shift_indices(self.0.len());
             self.0.extend(i.dice);
             self.1.push(Box::new(i.op));
@@ -956,11 +1016,11 @@ impl CombineBuilder {
     }
 
     #[must_use]
-    pub fn build<F>(self, op: F) -> Expr<Combine<F>>
+    pub fn build<F>(self, op: F) -> Composite<Combine<F>>
     where
         F: Fn(&[Key]) -> Key + 'static,
     {
-        Expr {
+        Composite {
             dice: self.0,
             op: Combine(self.1, op),
         }
@@ -1099,26 +1159,24 @@ impl Operation for Erased {
     }
 }
 
-impl<T> IntoExpr for Expr<T>
+impl<T> Expr for Composite<T>
 where
     T: Operation + 'static,
 {
     type Op = T;
 
-    fn into_expr(self) -> Expr<Self::Op> {
+    fn into_composite(self) -> Composite<Self::Op> {
         self
     }
 }
 
-impl IntoExpr for Die {
+impl Expr for Die {
     type Op = Index;
 
-    fn into_expr(self) -> Expr<Self::Op> {
-        Expr {
+    fn into_composite(self) -> Composite<Self::Op> {
+        Composite {
             dice: vec![self],
             op: Index(0),
         }
     }
 }
-
-impl<T> ExprExt for T where T: IntoExpr + Sized {}

@@ -6,7 +6,7 @@ fn main() {
     todo!()
 }
 
-fn atk(die: impl IntoExpr, atk_bonus: i32, armor_class: i32) -> impl IntoExpr {
+fn atk(die: impl Expr, atk_bonus: i32, armor_class: i32) -> impl Expr {
     die.map(move |x| match x {
         20 => 2,
         x if x != 1 && x + atk_bonus >= armor_class => 1,
@@ -14,26 +14,26 @@ fn atk(die: impl IntoExpr, atk_bonus: i32, armor_class: i32) -> impl IntoExpr {
     })
 }
 
-fn atk_dmg(
-    atk: impl IntoExpr,
-    dmg: impl IntoExpr + Clone,
-    dmg_bonus: i32,
-    multiattack: usize,
-) -> impl IntoExpr {
+fn atk_dmg<A, D>(atk: A, dmg: D, dmg_bonus: i32, multiattack: usize) -> impl Expr
+where
+    A: Expr,
+    D: Expr + Clone,
+    A::Op: Clone,
+    D::Op: Clone,
+{
     atk.combine_three(dmg.clone(), dmg, move |x, y, z| match x {
         2 => y + z + dmg_bonus,
         1 => y + dmg_bonus,
         _ => 0,
     })
-    .eval()
     .sum(multiattack)
 }
 
-fn save(die: impl IntoExpr, save_bonus: i32, save_dc: i32) -> impl IntoExpr {
+fn save(die: impl Expr, save_bonus: i32, save_dc: i32) -> impl Expr {
     die.kadd(save_bonus).gt(save_dc)
 }
 
-fn save_dmg(save: impl IntoExpr, dmg: impl IntoExpr, half: bool) -> impl IntoExpr {
+fn save_dmg(save: impl Expr, dmg: impl Expr, half: bool) -> impl Expr {
     save.combine_two(dmg, move |x, y| {
         if x != 0 {
             y
@@ -45,15 +45,19 @@ fn save_dmg(save: impl IntoExpr, dmg: impl IntoExpr, half: bool) -> impl IntoExp
     })
 }
 
+fn fireball(save: impl Expr) -> impl Expr {
+    save_dmg(save, d6().sum(8), true)
+}
+
 fn sorc_burst(
-    die: impl IntoExpr,
+    die: impl Expr,
     cha: i32,
     init: usize,
     pb: i32,
     weapon_plus: i32,
     armor_class: i32,
-) -> impl IntoExpr {
-    Expr::fold(
+) -> impl Expr {
+    Composite::fold(
         once(atk(die, cha + pb + weapon_plus, armor_class).eval())
             .chain(repeat_n(d8(), 2 * init + cha as usize)),
         move |x| match x[0] {
