@@ -313,7 +313,6 @@ pub trait Expr: Clone + Debug + Send {
 
     fn fold_n<F, O>(self, size: usize, op: F) -> Composite<Fold<Self::Op, F>>
     where
-        Self::Op: Clone,
         F: Fn(&[Key]) -> O + Clone + Send,
         O: Into<Key>,
     {
@@ -324,18 +323,12 @@ pub trait Expr: Clone + Debug + Send {
         }
     }
 
-    fn sum_n(self, size: usize) -> Composite<Sum<Self::Op>>
-    where
-        Self::Op: Clone,
-    {
+    fn sum_n(self, size: usize) -> Composite<Sum<Self::Op>> {
         let (dice, op) = self.into_composite().explode(size);
         Composite { dice, op: Sum(op) }
     }
 
-    fn product_n(self, size: usize) -> Composite<Product<Self::Op>>
-    where
-        Self::Op: Clone,
-    {
+    fn product_n(self, size: usize) -> Composite<Product<Self::Op>> {
         let (dice, op) = self.into_composite().explode(size);
         Composite {
             dice,
@@ -343,10 +336,7 @@ pub trait Expr: Clone + Debug + Send {
         }
     }
 
-    fn min_of_n(self, size: usize) -> Composite<MinOf<Self::Op>>
-    where
-        Self::Op: Clone,
-    {
+    fn min_of_n(self, size: usize) -> Composite<MinOf<Self::Op>> {
         let (dice, op) = self.into_composite().explode(size);
         Composite {
             dice,
@@ -354,10 +344,7 @@ pub trait Expr: Clone + Debug + Send {
         }
     }
 
-    fn max_of_n(self, size: usize) -> Composite<MaxOf<Self::Op>>
-    where
-        Self::Op: Clone,
-    {
+    fn max_of_n(self, size: usize) -> Composite<MaxOf<Self::Op>> {
         let (dice, op) = self.into_composite().explode(size);
         Composite {
             dice,
@@ -367,7 +354,6 @@ pub trait Expr: Clone + Debug + Send {
 
     fn any_n<F>(self, size: usize, pred: F) -> Composite<Any<Self::Op, F>>
     where
-        Self::Op: Clone,
         F: Fn(Key) -> bool + Clone + Send,
     {
         let (dice, op) = self.into_composite().explode(size);
@@ -379,7 +365,6 @@ pub trait Expr: Clone + Debug + Send {
 
     fn all_n<F>(self, size: usize, pred: F) -> Composite<All<Self::Op, F>>
     where
-        Self::Op: Clone,
         F: Fn(Key) -> bool + Clone + Send,
     {
         let (dice, op) = self.into_composite().explode(size);
