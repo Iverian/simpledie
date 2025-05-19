@@ -6,12 +6,12 @@ use crate::approx::Approx;
 use crate::util::{BigUint, DieList, Key, OverflowResult, Value};
 use crate::Die;
 
-type OpPtr = Box<dyn Operation + 'static>;
+type OpPtr = Box<dyn Operation + Send + 'static>;
 
 #[derive(Clone, Debug)]
 pub struct Composite<T = Index>
 where
-    T: Operation + Clone + 'static,
+    T: Operation + Clone + Send + 'static,
 {
     dice: DieList,
     op: T,
@@ -63,16 +63,19 @@ pub struct Max<L, R>(L, R);
 pub struct Fold<T, F>(Vec<T>, F);
 
 #[derive(Clone, Copy, Debug)]
-pub struct FoldTwo<L, R, F>(L, R, F);
+pub struct FoldTwo<T1, T2, F>(T1, T2, F);
 
 #[derive(Clone, Copy, Debug)]
 pub struct FoldThree<T1, T2, T3, F>(T1, T2, T3, F);
 
-#[derive(Clone)]
-pub struct DynFold<F>(Vec<OpPtr>, F);
+#[derive(Clone, Copy, Debug)]
+pub struct FoldFour<T1, T2, T3, T4, F>(T1, T2, T3, T4, F);
 
-#[derive(Default)]
-pub struct DynFoldBuilder(DieList, Vec<OpPtr>);
+#[derive(Clone, Copy, Debug)]
+pub struct FoldFive<T1, T2, T3, T4, T5, F>(T1, T2, T3, T4, T5, F);
+
+#[derive(Clone, Default)]
+pub struct DynFoldBuilder(DieList, Vec<Boxed>);
 
 #[derive(Clone, Debug)]
 pub struct Sum<T>(Vec<T>);
@@ -103,18 +106,18 @@ pub trait Operation: DynClone {
 
     fn shift_indices(&mut self, value: usize);
 
-    fn into_ptr(self) -> OpPtr
+    fn boxed(self) -> Boxed
     where
-        Self: Sized + 'static,
+        Self: Sized + Send + 'static,
     {
-        Box::new(self)
+        Boxed(Box::new(self))
     }
 }
 
 dyn_clone::clone_trait_object!(Operation);
 
 pub trait Expr: Clone {
-    type Op: Operation + Clone + 'static;
+    type Op: Operation + Clone + Send + 'static;
 
     fn into_composite(self) -> Composite<Self::Op>;
 
@@ -123,16 +126,16 @@ pub trait Expr: Clone {
     }
 
     fn try_eval(self) -> OverflowResult<Die> {
-        self.into_composite().try_eval()
+        self.into_composite().eval_exact()
     }
 
     fn approx_eval(self, approx: Approx) -> Die {
-        self.into_composite().approx_eval(approx)
+        self.into_composite().eval_approx(approx)
     }
 
     fn map<F, O>(self, op: F) -> Composite<Map<Self::Op, F>>
     where
-        F: Fn(Key) -> O + Clone,
+        F: Fn(Key) -> O + Clone + Send,
         O: Into<Key>,
     {
         let me = self.into_composite();
@@ -318,7 +321,7 @@ pub trait Expr: Clone {
     fn fold_n<F, O>(self, size: usize, op: F) -> Composite<Fold<Self::Op, F>>
     where
         Self::Op: Clone,
-        F: Fn(&[Key]) -> O + Clone,
+        F: Fn(&[Key]) -> O + Clone + Send,
         O: Into<Key>,
     {
         let (dice, expr) = self.into_composite().explode(size);
@@ -326,53 +329,6 @@ pub trait Expr: Clone {
             dice,
             op: Fold(expr, op),
         }
-    }
-
-    fn fold_two<T, F, O>(self, rhs: T, op: F) -> Composite<FoldTwo<Self::Op, T::Op, F>>
-    where
-        T: Expr,
-        F: Fn(Key, Key) -> O + Clone,
-        O: Into<Key>,
-    {
-        let mut me = self.into_composite();
-        let mut rhs = rhs.into_composite();
-        rhs.op.shift_indices(me.dice.len());
-        me.dice.extend(rhs.dice);
-        Composite {
-            dice: me.dice,
-            op: FoldTwo(me.op, rhs.op, op),
-        }
-    }
-
-    #[allow(clippy::type_complexity)]
-    fn fold_three<T1, T2, F, O>(
-        self,
-        f: T1,
-        s: T2,
-        op: F,
-    ) -> Composite<FoldThree<Self::Op, T1::Op, T2::Op, F>>
-    where
-        T1: Expr,
-        T2: Expr,
-        F: Fn(Key, Key, Key) -> O + Clone,
-        O: Into<Key>,
-    {
-        let mut me = self.into_composite();
-        let mut f = f.into_composite();
-        let mut s = s.into_composite();
-        f.op.shift_indices(me.dice.len());
-        me.dice.extend(f.dice);
-        s.op.shift_indices(me.dice.len());
-        me.dice.extend(s.dice);
-        Composite {
-            dice: me.dice,
-            op: FoldThree(me.op, f.op, s.op, op),
-        }
-    }
-
-    fn dyn_fold(self) -> DynFoldBuilder {
-        let me = self.into_composite();
-        DynFoldBuilder(me.dice, vec![me.op.into_ptr()])
     }
 
     fn sum_n(self, size: usize) -> Composite<Sum<Self::Op>>
@@ -419,7 +375,7 @@ pub trait Expr: Clone {
     fn any_n<F>(self, size: usize, pred: F) -> Composite<Any<Self::Op, F>>
     where
         Self::Op: Clone,
-        F: Fn(Key) -> bool + Clone,
+        F: Fn(Key) -> bool + Clone + Send,
     {
         let (dice, op) = self.into_composite().explode(size);
         Composite {
@@ -431,7 +387,7 @@ pub trait Expr: Clone {
     fn all_n<F>(self, size: usize, pred: F) -> Composite<All<Self::Op, F>>
     where
         Self::Op: Clone,
-        F: Fn(Key) -> bool + Clone,
+        F: Fn(Key) -> bool + Clone + Send,
     {
         let (dice, op) = self.into_composite().explode(size);
         Composite {
@@ -448,7 +404,7 @@ pub trait Expr: Clone {
         rhs: R,
     ) -> Composite<Branch<F, Self::Op, L::Op, R::Op>>
     where
-        F: Fn(Key) -> bool + Clone,
+        F: Fn(Key) -> bool + Clone + Send,
         L: Expr,
         R: Expr,
     {
@@ -474,7 +430,7 @@ pub trait Expr: Clone {
         let me = self.into_composite();
         Composite {
             dice: me.dice,
-            op: Boxed(me.op.into_ptr()),
+            op: me.op.boxed(),
         }
     }
 }
@@ -489,7 +445,7 @@ impl Die {
     where
         T1: Expr,
         T2: Expr,
-        F: Fn(Key, Key) -> O + Clone,
+        F: Fn(Key, Key) -> O + Clone + Send,
         O: Into<Key>,
     {
         let e1 = e1.into_composite();
@@ -516,7 +472,7 @@ impl Die {
         T1: Expr,
         T2: Expr,
         T3: Expr,
-        F: Fn(Key, Key, Key) -> O + Clone,
+        F: Fn(Key, Key, Key) -> O + Clone + Send,
         O: Into<Key>,
     {
         let e1 = e1.into_composite();
@@ -536,10 +492,87 @@ impl Die {
         }
     }
 
+    #[allow(clippy::type_complexity)]
+    pub fn fold_four<T1, T2, T3, T4, F, O>(
+        e1: T1,
+        e2: T2,
+        e3: T3,
+        e4: T4,
+        op: F,
+    ) -> Composite<FoldFour<T1::Op, T2::Op, T3::Op, T4::Op, F>>
+    where
+        T1: Expr,
+        T2: Expr,
+        T3: Expr,
+        T4: Expr,
+        F: Fn(Key, Key, Key, Key) -> O + Clone + Send,
+        O: Into<Key>,
+    {
+        let e1 = e1.into_composite();
+        let mut e2 = e2.into_composite();
+        let mut e3 = e3.into_composite();
+        let mut e4 = e4.into_composite();
+
+        let mut dice = e1.dice;
+        dice.reserve(e2.dice.len() + e3.dice.len() + e4.dice.len());
+        e2.op.shift_indices(dice.len());
+        dice.extend(e2.dice);
+        e3.op.shift_indices(dice.len());
+        dice.extend(e3.dice);
+        e4.op.shift_indices(dice.len());
+        dice.extend(e4.dice);
+
+        Composite {
+            dice,
+            op: FoldFour(e1.op, e2.op, e3.op, e4.op, op),
+        }
+    }
+
+    #[allow(clippy::type_complexity)]
+    pub fn fold_five<T1, T2, T3, T4, T5, F, O>(
+        e1: T1,
+        e2: T2,
+        e3: T3,
+        e4: T4,
+        e5: T5,
+        op: F,
+    ) -> Composite<FoldFive<T1::Op, T2::Op, T3::Op, T4::Op, T5::Op, F>>
+    where
+        T1: Expr,
+        T2: Expr,
+        T3: Expr,
+        T4: Expr,
+        T5: Expr,
+        F: Fn(Key, Key, Key, Key, Key) -> O + Clone + Send,
+        O: Into<Key>,
+    {
+        let e1 = e1.into_composite();
+        let mut e2 = e2.into_composite();
+        let mut e3 = e3.into_composite();
+        let mut e4 = e4.into_composite();
+        let mut e5 = e5.into_composite();
+
+        let mut dice = e1.dice;
+        dice.reserve(e2.dice.len() + e3.dice.len() + e4.dice.len() + e5.dice.len());
+        e2.op.shift_indices(dice.len());
+        dice.extend(e2.dice);
+        e3.op.shift_indices(dice.len());
+        dice.extend(e3.dice);
+        e4.op.shift_indices(dice.len());
+        dice.extend(e4.dice);
+        e5.op.shift_indices(dice.len());
+        dice.extend(e5.dice);
+
+        Composite {
+            dice,
+            op: FoldFive(e1.op, e2.op, e3.op, e4.op, e5.op, op),
+        }
+    }
+
     #[must_use]
     pub fn fold<F, I, E>(iter: I, op: F) -> Composite<Fold<E::Op, F>>
     where
-        F: Fn(&[Key]) -> Key + Clone,
+        F: Fn(&[Key]) -> Key + Clone + Send,
         I: IntoIterator<Item = E>,
         E: Expr,
     {
@@ -602,7 +635,7 @@ impl Die {
     where
         I: IntoIterator<Item = E>,
         E: Expr,
-        F: Fn(Key) -> bool + Clone,
+        F: Fn(Key) -> bool + Clone + Send,
     {
         let (dice, items) = Self::parts(iter);
         Composite {
@@ -615,7 +648,7 @@ impl Die {
     where
         I: IntoIterator<Item = E>,
         E: Expr,
-        F: Fn(Key) -> bool + Clone,
+        F: Fn(Key) -> bool + Clone + Send,
     {
         let (dice, items) = Self::parts(iter);
         Composite {
@@ -646,18 +679,18 @@ impl Die {
 
 impl<T> Composite<T>
 where
-    T: Operation + Clone + 'static,
+    T: Operation + Clone + Send + 'static,
 {
     pub fn eval(self) -> Die {
         Die::eval(self.dice, move |x| self.op.call(x))
     }
 
-    pub fn try_eval(self) -> OverflowResult<Die> {
-        Die::try_eval(self.dice, move |x| self.op.call(x))
+    pub fn eval_exact(self) -> OverflowResult<Die> {
+        Die::eval_exact(self.dice, move |x| self.op.call(x))
     }
 
-    pub fn approx_eval(self, approx: Approx) -> Die {
-        Die::approx_eval(approx, &self.dice, move |x| self.op.call(x))
+    pub fn eval_approx(self, approx: Approx) -> Die {
+        Die::eval_approx(approx, &self.dice, move |x| self.op.call(x))
     }
 
     pub fn denom(&self) -> BigUint {
@@ -670,30 +703,27 @@ where
     pub fn can_eval_directly(&self) -> bool {
         self.denom() < BigUint::from(Value::MAX)
     }
-}
 
-impl<T> Composite<T>
-where
-    T: Operation + Clone,
-{
     fn explode(self, size: usize) -> (DieList, Vec<T>) {
         assert!(size != 0, "explode size cannot be zero");
         if size == 1 {
             return (self.dice, vec![self.op]);
         }
 
-        let m = self.dice.len();
-        let mut dice = Vec::with_capacity(size * m);
+        let mut src = self;
+        let mut dice = Vec::with_capacity(size * src.dice.len());
         let mut op = Vec::with_capacity(size);
 
-        for i in 1..size {
-            let mut item = self.op.clone();
-            dice.extend(self.dice.iter().cloned());
-            item.shift_indices(i * m);
+        for _ in 1..size {
+            let mut item = src.op.clone();
+            item.shift_indices(dice.len());
+            dice.extend(src.dice.iter().cloned());
             op.push(item);
         }
-        dice.extend(self.dice);
-        op.push(self.op);
+
+        src.op.shift_indices(dice.len());
+        dice.extend(src.dice);
+        op.push(src.op);
 
         (dice, op)
     }
@@ -959,67 +989,123 @@ where
     }
 }
 
-impl<F, O> Operation for DynFold<F>
+impl<T1, T2, T3, T4, F, O> Operation for FoldFour<T1, T2, T3, T4, F>
 where
-    F: Fn(&[Key]) -> O + Clone,
+    T1: Operation + Clone,
+    T2: Operation + Clone,
+    T3: Operation + Clone,
+    T4: Operation + Clone,
+    F: Fn(Key, Key, Key, Key) -> O + Clone,
     O: Into<Key>,
 {
     fn call(&self, values: &[Key]) -> Key {
-        self.1(
-            self.0
-                .iter()
-                .map(|x| x.call(values))
-                .collect::<Vec<_>>()
-                .as_slice(),
+        self.4(
+            self.0.call(values),
+            self.1.call(values),
+            self.2.call(values),
+            self.3.call(values),
         )
         .into()
     }
 
     fn shift_indices(&mut self, value: usize) {
-        for x in &mut self.0 {
-            x.shift_indices(value);
-        }
+        self.0.shift_indices(value);
+        self.1.shift_indices(value);
+        self.2.shift_indices(value);
+        self.3.shift_indices(value);
+    }
+}
+
+impl<T1, T2, T3, T4, T5, F, O> Operation for FoldFive<T1, T2, T3, T4, T5, F>
+where
+    T1: Operation + Clone,
+    T2: Operation + Clone,
+    T3: Operation + Clone,
+    T4: Operation + Clone,
+    T5: Operation + Clone,
+    F: Fn(Key, Key, Key, Key, Key) -> O + Clone,
+    O: Into<Key>,
+{
+    fn call(&self, values: &[Key]) -> Key {
+        self.5(
+            self.0.call(values),
+            self.1.call(values),
+            self.2.call(values),
+            self.3.call(values),
+            self.4.call(values),
+        )
+        .into()
+    }
+
+    fn shift_indices(&mut self, value: usize) {
+        self.0.shift_indices(value);
+        self.1.shift_indices(value);
+        self.2.shift_indices(value);
+        self.3.shift_indices(value);
+        self.4.shift_indices(value);
     }
 }
 
 impl DynFoldBuilder {
     #[must_use]
-    pub fn push<TR, R>(mut self, expr: TR) -> Self
+    pub fn push<T>(mut self, expr: T) -> Self
     where
-        TR: Expr<Op = R>,
-        R: Operation + Clone + 'static,
+        T: Expr,
     {
         let mut expr = expr.into_composite();
         self.0.extend(expr.dice);
         expr.op.shift_indices(self.0.len());
-        self.1.push(expr.op.into_ptr());
+        self.1.push(expr.op.boxed());
         self
     }
 
     #[must_use]
-    pub fn extend<I, TR, R>(mut self, iter: I) -> Self
+    pub fn extend<I, T>(mut self, iter: I) -> Self
     where
-        I: IntoIterator<Item = TR>,
-        TR: Expr<Op = R>,
-        R: Operation + Clone + 'static,
+        I: IntoIterator<Item = T>,
+        T: Expr,
     {
         for i in iter {
             let mut i = i.into_composite();
             i.op.shift_indices(self.0.len());
             self.0.extend(i.dice);
-            self.1.push(i.op.into_ptr());
+            self.1.push(i.op.boxed());
         }
         self
     }
 
     #[must_use]
-    pub fn build<F>(self, op: F) -> Composite<DynFold<F>>
+    pub fn repeat<T>(mut self, e: T, size: usize) -> Self
     where
-        F: Fn(&[Key]) -> Key + Clone + 'static,
+        T: Expr,
+    {
+        if size == 0 {
+            return self;
+        }
+        let mut e = e.into_composite();
+
+        for _ in 1..size {
+            let mut i = e.clone();
+            i.op.shift_indices(self.0.len());
+            self.0.extend(i.dice);
+            self.1.push(i.op.boxed());
+        }
+
+        e.op.shift_indices(self.0.len());
+        self.0.extend(e.dice);
+        self.1.push(e.op.boxed());
+
+        self
+    }
+
+    #[must_use]
+    pub fn build<F>(self, op: F) -> Composite<Fold<Boxed, F>>
+    where
+        F: Fn(&[Key]) -> Key + Clone + Send,
     {
         Composite {
             dice: self.0,
-            op: DynFold(self.1, op),
+            op: Fold(self.1, op),
         }
     }
 }
@@ -1158,7 +1244,7 @@ impl Operation for Boxed {
 
 impl<T> Expr for Composite<T>
 where
-    T: Operation + Clone + 'static,
+    T: Operation + Clone + Send + 'static,
 {
     type Op = T;
 

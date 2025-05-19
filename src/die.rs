@@ -216,15 +216,15 @@ impl Die {
             .iter()
             .try_fold(1 as Value, |acc, x| acc.checked_mul(x.denom));
         match denom {
-            None => Self::approx_eval(Approx::default(), &dice, op),
+            None => Self::eval_approx(Approx::default(), &dice, op),
             Some(x) if x > Value::from(DIRECT_MAX_DENOM) => {
-                Self::approx_eval(Approx::default(), &dice, op)
+                Self::eval_approx(Approx::default(), &dice, op)
             }
-            Some(x) => Self::direct_eval(x, dice, op),
+            Some(x) => Self::eval_exact_impl(x, dice, op),
         }
     }
 
-    pub(crate) fn try_eval<F>(dice: DieList, op: F) -> OverflowResult<Die>
+    pub(crate) fn eval_exact<F>(dice: DieList, op: F) -> OverflowResult<Die>
     where
         F: Fn(&[Key]) -> Key,
     {
@@ -234,11 +234,11 @@ impl Die {
         else {
             return Err(OverflowError);
         };
-        Ok(Self::direct_eval(denom, dice, op))
+        Ok(Self::eval_exact_impl(denom, dice, op))
     }
 
     #[must_use]
-    pub(crate) fn approx_eval<F, G>(mut approx: Approx<G>, dice: &DieList, op: F) -> Die
+    pub(crate) fn eval_approx<F, G>(mut approx: Approx<G>, dice: &DieList, op: F) -> Die
     where
         F: Fn(&[Key]) -> Key,
         G: RngCore,
@@ -250,7 +250,7 @@ impl Die {
     }
 
     #[must_use]
-    pub(crate) fn direct_eval<F>(denom: Value, dice: DieList, op: F) -> Die
+    fn eval_exact_impl<F>(denom: Value, dice: DieList, op: F) -> Die
     where
         F: Fn(&[Key]) -> Key,
     {
