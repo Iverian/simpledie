@@ -3,8 +3,8 @@ use std::cmp::Ordering;
 use dyn_clone::DynClone;
 
 use crate::approx::Approx;
-use crate::die::{Die, OverflowResult};
-use crate::util::{cell, BigUint, Cell, DieList, Key, Value};
+use crate::util::{BigUint, DieList, Key, OverflowResult, Value};
+use crate::Die;
 
 type OpPtr = Box<dyn Operation + 'static>;
 
@@ -66,16 +66,16 @@ pub struct Max<L, R>(L, R);
 pub struct Fold<T, F>(Vec<T>, F);
 
 #[derive(Clone, Copy, Debug)]
-pub struct CombineTwo<L, R, F>(L, R, F);
+pub struct FoldTwo<L, R, F>(L, R, F);
 
 #[derive(Clone, Copy, Debug)]
-pub struct CombineThree<T1, T2, T3, F>(T1, T2, T3, F);
+pub struct FoldThree<T1, T2, T3, F>(T1, T2, T3, F);
 
 #[derive(Clone)]
-pub struct Combine<F>(Vec<OpPtr>, F);
+pub struct DynFold<F>(Vec<OpPtr>, F);
 
 #[derive(Default)]
-pub struct CombineBuilder(DieList, Vec<OpPtr>);
+pub struct DynFoldBuilder(DieList, Vec<OpPtr>);
 
 #[derive(Clone, Debug)]
 pub struct Sum<T>(Vec<T>);
@@ -99,7 +99,7 @@ pub struct All<T, F>(Vec<T>, F);
 pub struct Branch<F, C, L, R>(F, C, L, R);
 
 #[derive(Clone)]
-pub struct Erased(Cell<dyn Operation + 'static>);
+pub struct Boxed(OpPtr);
 
 pub trait Operation: DynClone {
     fn call(&self, values: &[Key]) -> Key;
@@ -318,7 +318,7 @@ pub trait Expr: Sized {
         }
     }
 
-    fn fold<F, O>(self, size: usize, op: F) -> Composite<Fold<Self::Op, F>>
+    fn fold_n<F, O>(self, size: usize, op: F) -> Composite<Fold<Self::Op, F>>
     where
         Self::Op: Clone,
         F: Fn(&[Key]) -> O + Clone,
@@ -331,7 +331,7 @@ pub trait Expr: Sized {
         }
     }
 
-    fn combine_two<T, F, O>(self, rhs: T, op: F) -> Composite<CombineTwo<Self::Op, T::Op, F>>
+    fn fold_two<T, F, O>(self, rhs: T, op: F) -> Composite<FoldTwo<Self::Op, T::Op, F>>
     where
         T: Expr,
         F: Fn(Key, Key) -> O + Clone,
@@ -343,17 +343,17 @@ pub trait Expr: Sized {
         me.dice.extend(rhs.dice);
         Composite {
             dice: me.dice,
-            op: CombineTwo(me.op, rhs.op, op),
+            op: FoldTwo(me.op, rhs.op, op),
         }
     }
 
     #[allow(clippy::type_complexity)]
-    fn combine_three<T1, T2, F, O>(
+    fn fold_three<T1, T2, F, O>(
         self,
         f: T1,
         s: T2,
         op: F,
-    ) -> Composite<CombineThree<Self::Op, T1::Op, T2::Op, F>>
+    ) -> Composite<FoldThree<Self::Op, T1::Op, T2::Op, F>>
     where
         T1: Expr,
         T2: Expr,
@@ -369,16 +369,16 @@ pub trait Expr: Sized {
         me.dice.extend(s.dice);
         Composite {
             dice: me.dice,
-            op: CombineThree(me.op, f.op, s.op, op),
+            op: FoldThree(me.op, f.op, s.op, op),
         }
     }
 
-    fn combine(self) -> CombineBuilder {
+    fn dyn_fold(self) -> DynFoldBuilder {
         let me = self.into_composite();
-        CombineBuilder(me.dice, vec![me.op.into_ptr()])
+        DynFoldBuilder(me.dice, vec![me.op.into_ptr()])
     }
 
-    fn sum(self, size: usize) -> Composite<Sum<Self::Op>>
+    fn sum_n(self, size: usize) -> Composite<Sum<Self::Op>>
     where
         Self::Op: Clone,
     {
@@ -386,7 +386,7 @@ pub trait Expr: Sized {
         Composite { dice, op: Sum(op) }
     }
 
-    fn product(self, size: usize) -> Composite<Product<Self::Op>>
+    fn product_n(self, size: usize) -> Composite<Product<Self::Op>>
     where
         Self::Op: Clone,
     {
@@ -397,7 +397,7 @@ pub trait Expr: Sized {
         }
     }
 
-    fn min_of(self, size: usize) -> Composite<MinOf<Self::Op>>
+    fn min_of_n(self, size: usize) -> Composite<MinOf<Self::Op>>
     where
         Self::Op: Clone,
     {
@@ -408,7 +408,7 @@ pub trait Expr: Sized {
         }
     }
 
-    fn max_of(self, size: usize) -> Composite<MaxOf<Self::Op>>
+    fn max_of_n(self, size: usize) -> Composite<MaxOf<Self::Op>>
     where
         Self::Op: Clone,
     {
@@ -419,7 +419,7 @@ pub trait Expr: Sized {
         }
     }
 
-    fn any<F>(self, size: usize, pred: F) -> Composite<Any<Self::Op, F>>
+    fn any_n<F>(self, size: usize, pred: F) -> Composite<Any<Self::Op, F>>
     where
         Self::Op: Clone,
         F: Fn(Key) -> bool + Clone,
@@ -431,7 +431,7 @@ pub trait Expr: Sized {
         }
     }
 
-    fn all<F>(self, size: usize, pred: F) -> Composite<All<Self::Op, F>>
+    fn all_n<F>(self, size: usize, pred: F) -> Composite<All<Self::Op, F>>
     where
         Self::Op: Clone,
         F: Fn(Key) -> bool + Clone,
@@ -470,29 +470,25 @@ pub trait Expr: Sized {
         }
     }
 
-    fn erase(self) -> Composite<Erased>
+    fn boxed(self) -> Composite<Boxed>
     where
         Self::Op: 'static,
     {
         let me = self.into_composite();
         Composite {
             dice: me.dice,
-            op: Erased(cell(me.op)),
+            op: Boxed(me.op.into_ptr()),
         }
     }
 }
 
-impl Composite {
+impl Die {
     #[must_use]
-    pub fn combine() -> CombineBuilder {
-        CombineBuilder::default()
+    pub fn dyn_fold() -> DynFoldBuilder {
+        DynFoldBuilder::default()
     }
 
-    pub fn combine_two<T1, T2, F, O>(
-        e1: T1,
-        e2: T2,
-        op: F,
-    ) -> Composite<CombineTwo<T1::Op, T2::Op, F>>
+    pub fn fold_two<T1, T2, F, O>(e1: T1, e2: T2, op: F) -> Composite<FoldTwo<T1::Op, T2::Op, F>>
     where
         T1: Expr,
         T2: Expr,
@@ -508,17 +504,17 @@ impl Composite {
 
         Composite {
             dice,
-            op: CombineTwo(e1.op, e2.op, op),
+            op: FoldTwo(e1.op, e2.op, op),
         }
     }
 
     #[allow(clippy::type_complexity)]
-    pub fn combine_three<T1, T2, T3, F, O>(
+    pub fn fold_three<T1, T2, T3, F, O>(
         e1: T1,
         e2: T2,
         e3: T3,
         op: F,
-    ) -> Composite<CombineThree<T1::Op, T2::Op, T3::Op, F>>
+    ) -> Composite<FoldThree<T1::Op, T2::Op, T3::Op, F>>
     where
         T1: Expr,
         T2: Expr,
@@ -539,7 +535,7 @@ impl Composite {
 
         Composite {
             dice,
-            op: CombineThree(e1.op, e2.op, e3.op, op),
+            op: FoldThree(e1.op, e2.op, e3.op, op),
         }
     }
 
@@ -938,7 +934,7 @@ where
     }
 }
 
-impl<L, R, F, O> Operation for CombineTwo<L, R, F>
+impl<L, R, F, O> Operation for FoldTwo<L, R, F>
 where
     L: Operation + Clone,
     R: Operation + Clone,
@@ -955,7 +951,7 @@ where
     }
 }
 
-impl<T1, T2, T3, F, O> Operation for CombineThree<T1, T2, T3, F>
+impl<T1, T2, T3, F, O> Operation for FoldThree<T1, T2, T3, F>
 where
     T1: Operation + Clone,
     T2: Operation + Clone,
@@ -979,7 +975,7 @@ where
     }
 }
 
-impl<F, O> Operation for Combine<F>
+impl<F, O> Operation for DynFold<F>
 where
     F: Fn(&[Key]) -> O + Clone,
     O: Into<Key>,
@@ -1002,7 +998,7 @@ where
     }
 }
 
-impl CombineBuilder {
+impl DynFoldBuilder {
     #[must_use]
     pub fn push<TR, R>(mut self, expr: TR) -> Self
     where
@@ -1033,13 +1029,13 @@ impl CombineBuilder {
     }
 
     #[must_use]
-    pub fn build<F>(self, op: F) -> Composite<Combine<F>>
+    pub fn build<F>(self, op: F) -> Composite<DynFold<F>>
     where
         F: Fn(&[Key]) -> Key + Clone + 'static,
     {
         Composite {
             dice: self.0,
-            op: Combine(self.1, op),
+            op: DynFold(self.1, op),
         }
     }
 }
@@ -1166,13 +1162,13 @@ where
     }
 }
 
-impl Operation for Erased {
+impl Operation for Boxed {
     fn call(&self, values: &[Key]) -> Key {
-        self.0.borrow().call(values)
+        self.0.call(values)
     }
 
     fn shift_indices(&mut self, value: usize) {
-        self.0.borrow_mut().shift_indices(value);
+        self.0.shift_indices(value);
     }
 }
 

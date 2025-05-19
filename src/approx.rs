@@ -2,10 +2,10 @@ use bon::Builder;
 use rand::rngs::ThreadRng;
 use rand::{thread_rng, RngCore};
 
-use crate::die::Die;
 use crate::util::{
     die_map, Entry, Key, Value, APPROX_ACCURACY, APPROX_MAX_SAMPLE_SIZE, APPROX_MIN_SAMPLE_SIZE,
 };
+use crate::Die;
 
 #[derive(Debug, Builder)]
 pub struct Approx<G = ThreadRng>

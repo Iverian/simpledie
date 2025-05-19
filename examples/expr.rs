@@ -21,12 +21,12 @@ where
     A::Op: Clone,
     D::Op: Clone,
 {
-    atk.combine_three(dmg.clone(), dmg, move |x, y, z| match x {
+    atk.fold_three(dmg.clone(), dmg, move |x, y, z| match x {
         2 => y + z + dmg_bonus,
         1 => y + dmg_bonus,
         _ => 0,
     })
-    .sum(multiattack)
+    .sum_n(multiattack)
 }
 
 fn save(die: impl Expr, save_bonus: i32, save_dc: i32) -> impl Expr {
@@ -34,7 +34,7 @@ fn save(die: impl Expr, save_bonus: i32, save_dc: i32) -> impl Expr {
 }
 
 fn save_dmg(save: impl Expr, dmg: impl Expr, half: bool) -> impl Expr {
-    save.combine_two(dmg, move |x, y| {
+    save.fold_two(dmg, move |x, y| {
         if x != 0 {
             y
         } else if half {
@@ -46,7 +46,7 @@ fn save_dmg(save: impl Expr, dmg: impl Expr, half: bool) -> impl Expr {
 }
 
 fn fireball(save: impl Expr) -> impl Expr {
-    save_dmg(save, d6().sum(8), true)
+    save_dmg(save, d6().sum_n(8), true)
 }
 
 fn sorc_burst(
@@ -57,7 +57,7 @@ fn sorc_burst(
     weapon_plus: i32,
     armor_class: i32,
 ) -> impl Expr {
-    Composite::fold(
+    Die::fold(
         once(atk(die, cha + pb + weapon_plus, armor_class).eval())
             .chain(repeat_n(d8(), 2 * init + cha as usize)),
         move |x| match x[0] {

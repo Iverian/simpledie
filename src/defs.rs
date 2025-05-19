@@ -1,7 +1,7 @@
 use std::num::NonZeroU16;
 use std::sync::LazyLock;
 
-use crate::die::Die;
+use crate::Die;
 
 pub static D1: LazyLock<Die> = LazyLock::new(|| Die::uniform(NonZeroU16::new(1).unwrap()));
 pub static D2: LazyLock<Die> = LazyLock::new(|| Die::uniform(NonZeroU16::new(2).unwrap()));

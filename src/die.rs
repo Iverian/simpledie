@@ -1,6 +1,5 @@
 use core::f64;
 use std::borrow::Borrow;
-use std::fmt::Debug;
 use std::iter::{FusedIterator, IntoIterator, Zip};
 use std::num::NonZeroU16;
 use std::vec;
@@ -9,31 +8,13 @@ use itertools::Itertools;
 use num::rational::Ratio;
 use num::ToPrimitive;
 use rand::{Rng, RngCore};
-use thiserror::Error;
 
 use crate::approx::Approx;
 use crate::util::{
-    die_map, BigInt, BigRatio, DieList, DieMap, Entry, Key, Value, DIRECT_MAX_DENOM,
+    die_map, BigInt, BigRatio, DieList, DieMap, Entry, Key, OverflowError, OverflowResult, Value,
+    DIRECT_MAX_DENOM,
 };
-
-#[derive(Debug, Clone)]
-pub struct Die {
-    denom: Value,
-    keys: Vec<Key>,
-    outcomes: Vec<Value>,
-}
-
-#[derive(Debug, Clone)]
-pub struct Iter<'a> {
-    die: &'a Die,
-    index: usize,
-}
-
-#[derive(Debug, Clone, Error)]
-#[error("overflow in probabilities")]
-pub struct OverflowError;
-
-pub type OverflowResult<T> = Result<T, OverflowError>;
+use crate::{Die, Iter};
 
 impl Die {
     #[must_use]

@@ -1,8 +1,8 @@
-use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::rc::Rc;
 
-use crate::die::Die;
+use thiserror::Error;
+
+use crate::Die;
 
 pub const APPROX_MAX_SAMPLE_SIZE: u32 = u32::MAX;
 pub const APPROX_MIN_SAMPLE_SIZE: u32 = 50_000_000;
@@ -17,13 +17,14 @@ pub type DieList = Vec<Die>;
 pub type BigRatio = num::BigRational;
 pub type BigInt = num::BigInt;
 pub type BigUint = num::BigUint;
-pub type Cell<T> = Rc<RefCell<T>>;
+
+#[derive(Debug, Clone, Error)]
+#[error("overflow in probabilities")]
+pub struct OverflowError;
+
+pub type OverflowResult<T> = Result<T, OverflowError>;
 
 #[inline]
 pub fn die_map() -> DieMap {
     DieMap::new()
-}
-
-pub fn cell<T>(value: T) -> Cell<T> {
-    Rc::new(RefCell::new(value))
 }
