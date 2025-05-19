@@ -113,7 +113,7 @@ pub trait Operation: DynClone {
 
 dyn_clone::clone_trait_object!(Operation);
 
-pub trait Expr: Sized {
+pub trait Expr: Clone {
     type Op: Operation + Clone + 'static;
 
     fn into_composite(self) -> Composite<Self::Op>;
