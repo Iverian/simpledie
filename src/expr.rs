@@ -8,7 +8,7 @@ use crate::util::{BigUint, DieList, Key, OverflowResult, Value};
 use crate::Die;
 
 #[derive(Clone, Debug)]
-pub struct Composite<T = Index>
+pub struct Composite<T = Id>
 where
     T: Operation + Clone + Debug + Send + 'static,
 {
@@ -17,7 +17,7 @@ where
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Index(usize);
+pub struct Id(usize);
 
 #[derive(Clone, Copy)]
 pub struct Map<T, F>(T, F);
@@ -722,7 +722,7 @@ where
     }
 }
 
-impl Operation for Index {
+impl Operation for Id {
     fn call(&self, values: &[Key]) -> Key {
         values[self.0]
     }
@@ -1362,12 +1362,12 @@ where
 }
 
 impl Expr for Die {
-    type Op = Index;
+    type Op = Id;
 
     fn into_composite(self) -> Composite<Self::Op> {
         Composite {
             dice: vec![self],
-            op: Index(0),
+            op: Id(0),
         }
     }
 
