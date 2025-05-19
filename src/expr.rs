@@ -30,9 +30,6 @@ pub struct Negate<T>(T);
 pub struct AddKey<T>(T, Key);
 
 #[derive(Clone, Copy, Debug)]
-pub struct SubKey<T>(T, Key);
-
-#[derive(Clone, Copy, Debug)]
 pub struct MulKey<T>(T, Key);
 
 #[derive(Clone, Copy, Debug)]
@@ -161,11 +158,11 @@ pub trait Expr: Sized {
         }
     }
 
-    fn ksub(self, rhs: Key) -> Composite<SubKey<Self::Op>> {
+    fn ksub(self, rhs: Key) -> Composite<AddKey<Self::Op>> {
         let me = self.into_composite();
         Composite {
             dice: me.dice,
-            op: SubKey(me.op, rhs),
+            op: AddKey(me.op, -rhs),
         }
     }
 
@@ -746,19 +743,6 @@ where
 {
     fn call(&self, values: &[Key]) -> Key {
         self.0.call(values) + self.1
-    }
-
-    fn shift_indices(&mut self, value: usize) {
-        self.0.shift_indices(value);
-    }
-}
-
-impl<T> Operation for SubKey<T>
-where
-    T: Operation + Clone,
-{
-    fn call(&self, values: &[Key]) -> Key {
-        self.0.call(values) - self.1
     }
 
     fn shift_indices(&mut self, value: usize) {
