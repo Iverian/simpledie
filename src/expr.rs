@@ -1262,4 +1262,16 @@ impl Expr for Die {
             op: Index(0),
         }
     }
+
+    fn eval(self) -> Die {
+        self
+    }
+
+    fn try_eval(self) -> OverflowResult<Die> {
+        Ok(self)
+    }
+
+    fn approx_eval(self, _approx: Approx) -> Die {
+        self
+    }
 }

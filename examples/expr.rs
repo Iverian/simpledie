@@ -57,7 +57,7 @@ fn sorc_burst(die: impl Expr, cha: i32, init: usize, pb: i32, armor_class: i32) 
 fn sorc_burst_dyn(die: impl Expr, cha: i32, init: usize, pb: i32, armor_class: i32) -> impl Expr {
     Die::dyn_fold()
         .push(atk(die, cha + pb, armor_class))
-        .extend(repeat_n(d8(), 2 * init + cha as usize))
+        .repeat(d8(), 2 * init + cha as usize)
         .build(move |x| match x[0] {
             2 => sorc_burst_hit(&x[1..], 2 * init),
             1 => sorc_burst_hit(&x[1..(1 + init + cha as usize)], init),
