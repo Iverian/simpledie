@@ -117,7 +117,7 @@ pub trait Operation: Debug + DynClone {
 
 dyn_clone::clone_trait_object!(Operation);
 
-pub trait Expr: Clone {
+pub trait Expr: Clone + Debug + Send {
     type Op: Operation + Clone + Debug + Send + 'static;
 
     fn into_composite(self) -> Composite<Self::Op>;
@@ -1360,7 +1360,7 @@ impl Operation for Boxed {
 
 impl<T> Expr for Composite<T>
 where
-    T: Operation + Clone + Send + 'static,
+    T: Operation + Clone + Debug + Send + 'static,
 {
     type Op = T;
 
