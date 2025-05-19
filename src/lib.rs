@@ -5,7 +5,6 @@ pub mod approx;
 pub mod defs;
 pub mod die;
 pub mod expr;
-pub mod operators;
 pub mod prelude;
 mod util;
 
