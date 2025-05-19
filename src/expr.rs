@@ -7,8 +7,6 @@ use crate::approx::Approx;
 use crate::util::{BigUint, DieList, Key, OverflowResult, Value};
 use crate::Die;
 
-type OpPtr = Box<dyn Operation + Send + 'static>;
-
 #[derive(Clone, Debug)]
 pub struct Composite<T = Index>
 where
@@ -25,7 +23,7 @@ pub struct Index(usize);
 pub struct Map<T, F>(T, F);
 
 #[derive(Clone, Copy, Debug)]
-pub struct Negate<T>(T);
+pub struct Neg<T>(T);
 
 #[derive(Clone, Copy, Debug)]
 pub struct AddKey<T>(T, Key);
@@ -40,7 +38,7 @@ pub struct DivKey<T>(T, Key);
 pub struct Not<T>(T);
 
 #[derive(Clone, Debug)]
-pub struct Eq<T>(T, Vec<Key>);
+pub struct Eq<T, const N: usize = 1>(T, [Key; N]);
 
 #[derive(Clone, Copy, Debug)]
 pub struct Cmp<T>(T, Key);
@@ -100,7 +98,7 @@ pub struct All<T, F>(Vec<T>, F);
 pub struct Branch<F, C, L, R>(F, C, L, R);
 
 #[derive(Clone, Debug)]
-pub struct Boxed(OpPtr);
+pub struct Boxed(Box<dyn Operation + Send + 'static>);
 
 pub trait Operation: Debug + DynClone {
     fn call(&self, values: &[Key]) -> Key;
@@ -146,11 +144,11 @@ pub trait Expr: Clone + Debug + Send {
         }
     }
 
-    fn neg(self) -> Composite<Negate<Self::Op>> {
+    fn neg(self) -> Composite<Neg<Self::Op>> {
         let me = self.into_composite();
         Composite {
             dice: me.dice,
-            op: Negate(me.op),
+            op: Neg(me.op),
         }
     }
 
@@ -194,7 +192,7 @@ pub trait Expr: Clone + Debug + Send {
         }
     }
 
-    fn contains(self, rhs: Vec<Key>) -> Composite<Eq<Self::Op>> {
+    fn contains<const N: usize>(self, rhs: [Key; N]) -> Composite<Eq<Self::Op, N>> {
         let me = self.into_composite();
         Composite {
             dice: me.dice,
@@ -203,13 +201,10 @@ pub trait Expr: Clone + Debug + Send {
     }
 
     fn eq(self, rhs: Key) -> Composite<Eq<Self::Op>> {
-        self.contains(vec![rhs])
+        self.contains([rhs])
     }
 
-    fn neq(self, rhs: Key) -> Composite<Not<Eq<Self::Op>>>
-    where
-        Self::Op: 'static,
-    {
+    fn neq(self, rhs: Key) -> Composite<Not<Eq<Self::Op>>> {
         self.eq(rhs).not()
     }
 
@@ -221,25 +216,22 @@ pub trait Expr: Clone + Debug + Send {
         }
     }
 
-    fn lt(self, rhs: Key) -> Composite<Eq<Cmp<Self::Op>>>
-    where
-        Self::Op: 'static,
-    {
+    fn lt(self, rhs: Key) -> Composite<Eq<Cmp<Self::Op>>> {
         self.cmp(rhs).eq(Ordering::Less as Key)
     }
 
-    fn le(self, rhs: Key) -> Composite<Eq<Cmp<Self::Op>>> {
+    fn le(self, rhs: Key) -> Composite<Eq<Cmp<Self::Op>, 2>> {
         self.cmp(rhs)
-            .contains(vec![Ordering::Less as Key, Ordering::Equal as Key])
+            .contains([Ordering::Less as Key, Ordering::Equal as Key])
     }
 
     fn gt(self, rhs: Key) -> Composite<Eq<Cmp<Self::Op>>> {
         self.cmp(rhs).eq(Ordering::Greater as Key)
     }
 
-    fn ge(self, rhs: Key) -> Composite<Eq<Cmp<Self::Op>>> {
+    fn ge(self, rhs: Key) -> Composite<Eq<Cmp<Self::Op>, 2>> {
         self.cmp(rhs)
-            .contains(vec![Ordering::Greater as Key, Ordering::Equal as Key])
+            .contains([Ordering::Equal as Key, Ordering::Greater as Key])
     }
 
     fn add<T>(self, rhs: T) -> Composite<Add<Self::Op, T::Op>>
@@ -256,7 +248,7 @@ pub trait Expr: Clone + Debug + Send {
         }
     }
 
-    fn sub<T>(self, rhs: T) -> Composite<Add<Self::Op, Negate<T::Op>>>
+    fn sub<T>(self, rhs: T) -> Composite<Add<Self::Op, Neg<T::Op>>>
     where
         T: Expr,
     {
@@ -764,7 +756,7 @@ where
     }
 }
 
-impl<T> Operation for Negate<T>
+impl<T> Operation for Neg<T>
 where
     T: Operation + Clone,
 {
@@ -832,7 +824,7 @@ where
     }
 }
 
-impl<T> Operation for Eq<T>
+impl<T, const N: usize> Operation for Eq<T, N>
 where
     T: Operation + Clone,
 {
