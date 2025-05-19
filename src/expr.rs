@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::fmt::Debug;
 
 use dyn_clone::DynClone;
 
@@ -11,7 +12,7 @@ type OpPtr = Box<dyn Operation + Send + 'static>;
 #[derive(Clone, Debug)]
 pub struct Composite<T = Index>
 where
-    T: Operation + Clone + Send + 'static,
+    T: Operation + Clone + Debug + Send + 'static,
 {
     dice: DieList,
     op: T,
@@ -20,7 +21,7 @@ where
 #[derive(Clone, Copy, Debug)]
 pub struct Index(usize);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct Map<T, F>(T, F);
 
 #[derive(Clone, Copy, Debug)]
@@ -59,19 +60,19 @@ pub struct Min<L, R>(L, R);
 #[derive(Clone, Copy, Debug)]
 pub struct Max<L, R>(L, R);
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Fold<T, F>(Vec<T>, F);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct FoldTwo<T1, T2, F>(T1, T2, F);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct FoldThree<T1, T2, T3, F>(T1, T2, T3, F);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct FoldFour<T1, T2, T3, T4, F>(T1, T2, T3, T4, F);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct FoldFive<T1, T2, T3, T4, T5, F>(T1, T2, T3, T4, T5, F);
 
 #[derive(Clone, Default)]
@@ -89,19 +90,19 @@ pub struct MaxOf<T>(Vec<T>);
 #[derive(Clone, Debug)]
 pub struct MinOf<T>(Vec<T>);
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Any<T, F>(Vec<T>, F);
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct All<T, F>(Vec<T>, F);
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Copy)]
 pub struct Branch<F, C, L, R>(F, C, L, R);
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Boxed(OpPtr);
 
-pub trait Operation: DynClone {
+pub trait Operation: Debug + DynClone {
     fn call(&self, values: &[Key]) -> Key;
 
     fn shift_indices(&mut self, value: usize);
@@ -117,7 +118,7 @@ pub trait Operation: DynClone {
 dyn_clone::clone_trait_object!(Operation);
 
 pub trait Expr: Clone {
-    type Op: Operation + Clone + Send + 'static;
+    type Op: Operation + Clone + Debug + Send + 'static;
 
     fn into_composite(self) -> Composite<Self::Op>;
 
@@ -679,7 +680,7 @@ impl Die {
 
 impl<T> Composite<T>
 where
-    T: Operation + Clone + Send + 'static,
+    T: Operation + Clone + Debug + Send + 'static,
 {
     pub fn eval(self) -> Die {
         Die::eval(self.dice, move |x| self.op.call(x))
@@ -751,6 +752,15 @@ where
 
     fn shift_indices(&mut self, value: usize) {
         self.0.shift_indices(value);
+    }
+}
+
+impl<T, F> Debug for Map<T, F>
+where
+    T: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Map").field(&self.0).finish()
     }
 }
 
@@ -948,10 +958,19 @@ where
     }
 }
 
-impl<L, R, F, O> Operation for FoldTwo<L, R, F>
+impl<T, F> Debug for Fold<T, F>
 where
-    L: Operation + Clone,
-    R: Operation + Clone,
+    T: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Fold").field(&self.0).finish()
+    }
+}
+
+impl<T1, T2, F, O> Operation for FoldTwo<T1, T2, F>
+where
+    T1: Operation + Clone,
+    T2: Operation + Clone,
     F: Fn(Key, Key) -> O + Clone,
     O: Into<Key>,
 {
@@ -962,6 +981,19 @@ where
     fn shift_indices(&mut self, value: usize) {
         self.0.shift_indices(value);
         self.1.shift_indices(value);
+    }
+}
+
+impl<T1, T2, F> Debug for FoldTwo<T1, T2, F>
+where
+    T1: Debug,
+    T2: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("FoldTwo")
+            .field(&self.0)
+            .field(&self.1)
+            .finish()
     }
 }
 
@@ -986,6 +1018,21 @@ where
         self.0.shift_indices(value);
         self.1.shift_indices(value);
         self.2.shift_indices(value);
+    }
+}
+
+impl<T1, T2, T3, F> Debug for FoldThree<T1, T2, T3, F>
+where
+    T1: Debug,
+    T2: Debug,
+    T3: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("FoldThree")
+            .field(&self.0)
+            .field(&self.1)
+            .field(&self.2)
+            .finish()
     }
 }
 
@@ -1016,6 +1063,23 @@ where
     }
 }
 
+impl<T1, T2, T3, T4, F> Debug for FoldFour<T1, T2, T3, T4, F>
+where
+    T1: Debug,
+    T2: Debug,
+    T3: Debug,
+    T4: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("FoldFour")
+            .field(&self.0)
+            .field(&self.1)
+            .field(&self.2)
+            .field(&self.3)
+            .finish()
+    }
+}
+
 impl<T1, T2, T3, T4, T5, F, O> Operation for FoldFive<T1, T2, T3, T4, T5, F>
 where
     T1: Operation + Clone,
@@ -1043,6 +1107,25 @@ where
         self.2.shift_indices(value);
         self.3.shift_indices(value);
         self.4.shift_indices(value);
+    }
+}
+
+impl<T1, T2, T3, T4, T5, F> Debug for FoldFive<T1, T2, T3, T4, T5, F>
+where
+    T1: Debug,
+    T2: Debug,
+    T3: Debug,
+    T4: Debug,
+    T5: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("FoldFive")
+            .field(&self.0)
+            .field(&self.1)
+            .field(&self.2)
+            .field(&self.3)
+            .field(&self.4)
+            .finish()
     }
 }
 
@@ -1190,6 +1273,15 @@ where
     }
 }
 
+impl<T, F> Debug for Any<T, F>
+where
+    T: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Any").field(&self.0).finish()
+    }
+}
+
 impl<T, F> Operation for All<T, F>
 where
     T: Operation + Clone,
@@ -1207,6 +1299,15 @@ where
         for x in &mut self.0 {
             x.shift_indices(value);
         }
+    }
+}
+
+impl<T, F> Debug for All<T, F>
+where
+    T: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("All").field(&self.0).finish()
     }
 }
 
@@ -1229,6 +1330,21 @@ where
         self.1.shift_indices(value);
         self.2.shift_indices(value);
         self.3.shift_indices(value);
+    }
+}
+
+impl<F, C, L, R> Debug for Branch<F, C, L, R>
+where
+    C: Debug,
+    L: Debug,
+    R: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Branch")
+            .field(&self.1)
+            .field(&self.2)
+            .field(&self.3)
+            .finish()
     }
 }
 
