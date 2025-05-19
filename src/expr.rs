@@ -1,5 +1,7 @@
 use std::cmp::Ordering;
 
+use dyn_clone::DynClone;
+
 use crate::approx::Approx;
 use crate::die::{Die, OverflowResult};
 use crate::util::{cell, BigUint, Cell, DieList, Key, Value};
@@ -9,7 +11,7 @@ type OpPtr = Box<dyn Operation + 'static>;
 #[derive(Clone, Debug)]
 pub struct Composite<T = Index>
 where
-    T: Operation + 'static,
+    T: Operation + Clone + 'static,
 {
     dice: DieList,
     op: T,
@@ -18,6 +20,7 @@ where
 #[derive(Clone, Copy, Debug)]
 pub struct Index(usize);
 
+#[derive(Clone, Copy, Debug)]
 pub struct Map<T, F>(T, F);
 
 #[derive(Clone, Copy, Debug)]
@@ -68,6 +71,7 @@ pub struct CombineTwo<L, R, F>(L, R, F);
 #[derive(Clone, Copy, Debug)]
 pub struct CombineThree<T1, T2, T3, F>(T1, T2, T3, F);
 
+#[derive(Clone)]
 pub struct Combine<F>(Vec<OpPtr>, F);
 
 #[derive(Default)]
@@ -97,13 +101,23 @@ pub struct Branch<F, C, L, R>(F, C, L, R);
 #[derive(Clone)]
 pub struct Erased(Cell<dyn Operation + 'static>);
 
-pub trait Operation {
+pub trait Operation: DynClone {
     fn call(&self, values: &[Key]) -> Key;
+
     fn shift_indices(&mut self, value: usize);
+
+    fn into_ptr(self) -> OpPtr
+    where
+        Self: Sized + 'static,
+    {
+        Box::new(self)
+    }
 }
 
+dyn_clone::clone_trait_object!(Operation);
+
 pub trait Expr: Sized {
-    type Op: Operation + 'static;
+    type Op: Operation + Clone + 'static;
 
     fn into_composite(self) -> Composite<Self::Op>;
 
@@ -121,7 +135,7 @@ pub trait Expr: Sized {
 
     fn map<F, O>(self, op: F) -> Composite<Map<Self::Op, F>>
     where
-        F: Fn(Key) -> O,
+        F: Fn(Key) -> O + Clone,
         O: Into<Key>,
     {
         let me = self.into_composite();
@@ -307,7 +321,7 @@ pub trait Expr: Sized {
     fn fold<F, O>(self, size: usize, op: F) -> Composite<Fold<Self::Op, F>>
     where
         Self::Op: Clone,
-        F: Fn(&[Key]) -> O,
+        F: Fn(&[Key]) -> O + Clone,
         O: Into<Key>,
     {
         let (dice, expr) = self.into_composite().explode(size);
@@ -320,7 +334,7 @@ pub trait Expr: Sized {
     fn combine_two<T, F, O>(self, rhs: T, op: F) -> Composite<CombineTwo<Self::Op, T::Op, F>>
     where
         T: Expr,
-        F: Fn(Key, Key) -> O,
+        F: Fn(Key, Key) -> O + Clone,
         O: Into<Key>,
     {
         let mut me = self.into_composite();
@@ -343,7 +357,7 @@ pub trait Expr: Sized {
     where
         T1: Expr,
         T2: Expr,
-        F: Fn(Key, Key, Key) -> O,
+        F: Fn(Key, Key, Key) -> O + Clone,
         O: Into<Key>,
     {
         let mut me = self.into_composite();
@@ -361,7 +375,7 @@ pub trait Expr: Sized {
 
     fn combine(self) -> CombineBuilder {
         let me = self.into_composite();
-        CombineBuilder(me.dice, vec![Box::new(me.op)])
+        CombineBuilder(me.dice, vec![me.op.into_ptr()])
     }
 
     fn sum(self, size: usize) -> Composite<Sum<Self::Op>>
@@ -408,7 +422,7 @@ pub trait Expr: Sized {
     fn any<F>(self, size: usize, pred: F) -> Composite<Any<Self::Op, F>>
     where
         Self::Op: Clone,
-        F: Fn(Key) -> bool,
+        F: Fn(Key) -> bool + Clone,
     {
         let (dice, op) = self.into_composite().explode(size);
         Composite {
@@ -420,7 +434,7 @@ pub trait Expr: Sized {
     fn all<F>(self, size: usize, pred: F) -> Composite<All<Self::Op, F>>
     where
         Self::Op: Clone,
-        F: Fn(Key) -> bool,
+        F: Fn(Key) -> bool + Clone,
     {
         let (dice, op) = self.into_composite().explode(size);
         Composite {
@@ -437,7 +451,7 @@ pub trait Expr: Sized {
         rhs: R,
     ) -> Composite<Branch<F, Self::Op, L::Op, R::Op>>
     where
-        F: Fn(Key) -> bool,
+        F: Fn(Key) -> bool + Clone,
         L: Expr,
         R: Expr,
     {
@@ -482,7 +496,7 @@ impl Composite {
     where
         T1: Expr,
         T2: Expr,
-        F: Fn(Key, Key) -> O,
+        F: Fn(Key, Key) -> O + Clone,
         O: Into<Key>,
     {
         let e1 = e1.into_composite();
@@ -509,7 +523,7 @@ impl Composite {
         T1: Expr,
         T2: Expr,
         T3: Expr,
-        F: Fn(Key, Key, Key) -> O,
+        F: Fn(Key, Key, Key) -> O + Clone,
         O: Into<Key>,
     {
         let e1 = e1.into_composite();
@@ -532,7 +546,7 @@ impl Composite {
     #[must_use]
     pub fn fold<F, I, E>(iter: I, op: F) -> Composite<Fold<E::Op, F>>
     where
-        F: Fn(&[Key]) -> Key,
+        F: Fn(&[Key]) -> Key + Clone,
         I: IntoIterator<Item = E>,
         E: Expr,
     {
@@ -595,7 +609,7 @@ impl Composite {
     where
         I: IntoIterator<Item = E>,
         E: Expr,
-        F: Fn(Key) -> bool,
+        F: Fn(Key) -> bool + Clone,
     {
         let (dice, items) = Self::parts(iter);
         Composite {
@@ -608,7 +622,7 @@ impl Composite {
     where
         I: IntoIterator<Item = E>,
         E: Expr,
-        F: Fn(Key) -> bool,
+        F: Fn(Key) -> bool + Clone,
     {
         let (dice, items) = Self::parts(iter);
         Composite {
@@ -639,7 +653,7 @@ impl Composite {
 
 impl<T> Composite<T>
 where
-    T: Operation,
+    T: Operation + Clone + 'static,
 {
     pub fn eval(self) -> Die {
         Die::eval(self.dice, move |x| self.op.call(x))
@@ -704,8 +718,8 @@ impl Operation for Index {
 
 impl<T, F, O> Operation for Map<T, F>
 where
-    T: Operation,
-    F: Fn(Key) -> O,
+    T: Operation + Clone,
+    F: Fn(Key) -> O + Clone,
     O: Into<Key>,
 {
     fn call(&self, values: &[Key]) -> Key {
@@ -717,7 +731,10 @@ where
     }
 }
 
-impl<T: Operation> Operation for Negate<T> {
+impl<T> Operation for Negate<T>
+where
+    T: Operation + Clone,
+{
     fn call(&self, values: &[Key]) -> Key {
         -self.0.call(values)
     }
@@ -729,7 +746,7 @@ impl<T: Operation> Operation for Negate<T> {
 
 impl<T> Operation for AddKey<T>
 where
-    T: Operation,
+    T: Operation + Clone,
 {
     fn call(&self, values: &[Key]) -> Key {
         self.0.call(values) + self.1
@@ -742,7 +759,7 @@ where
 
 impl<T> Operation for SubKey<T>
 where
-    T: Operation,
+    T: Operation + Clone,
 {
     fn call(&self, values: &[Key]) -> Key {
         self.0.call(values) - self.1
@@ -755,7 +772,7 @@ where
 
 impl<T> Operation for MulKey<T>
 where
-    T: Operation,
+    T: Operation + Clone,
 {
     fn call(&self, values: &[Key]) -> Key {
         self.0.call(values) * self.1
@@ -768,7 +785,7 @@ where
 
 impl<T> Operation for DivKey<T>
 where
-    T: Operation,
+    T: Operation + Clone,
 {
     fn call(&self, values: &[Key]) -> Key {
         self.0.call(values) / self.1
@@ -781,7 +798,7 @@ where
 
 impl<T> Operation for Not<T>
 where
-    T: Operation,
+    T: Operation + Clone,
 {
     fn call(&self, values: &[Key]) -> Key {
         Key::from(match self.0.call(values) {
@@ -797,7 +814,7 @@ where
 
 impl<T> Operation for Eq<T>
 where
-    T: Operation,
+    T: Operation + Clone,
 {
     fn call(&self, values: &[Key]) -> Key {
         let v = self.0.call(values);
@@ -811,7 +828,7 @@ where
 
 impl<T> Operation for Cmp<T>
 where
-    T: Operation,
+    T: Operation + Clone,
 {
     fn call(&self, values: &[Key]) -> Key {
         self.0.call(values).cmp(&self.1) as Key
@@ -824,8 +841,8 @@ where
 
 impl<L, R> Operation for Add<L, R>
 where
-    L: Operation,
-    R: Operation,
+    L: Operation + Clone,
+    R: Operation + Clone,
 {
     fn call(&self, values: &[Key]) -> Key {
         self.0.call(values) + self.1.call(values)
@@ -839,8 +856,8 @@ where
 
 impl<L, R> Operation for Mul<L, R>
 where
-    L: Operation,
-    R: Operation,
+    L: Operation + Clone,
+    R: Operation + Clone,
 {
     fn call(&self, values: &[Key]) -> Key {
         self.0.call(values) * self.1.call(values)
@@ -854,8 +871,8 @@ where
 
 impl<L, R> Operation for Div<L, R>
 where
-    L: Operation,
-    R: Operation,
+    L: Operation + Clone,
+    R: Operation + Clone,
 {
     fn call(&self, values: &[Key]) -> Key {
         self.0.call(values) / self.1.call(values)
@@ -869,8 +886,8 @@ where
 
 impl<L, R> Operation for Min<L, R>
 where
-    L: Operation,
-    R: Operation,
+    L: Operation + Clone,
+    R: Operation + Clone,
 {
     fn call(&self, values: &[Key]) -> Key {
         self.0.call(values).min(self.1.call(values))
@@ -884,8 +901,8 @@ where
 
 impl<L, R> Operation for Max<L, R>
 where
-    L: Operation,
-    R: Operation,
+    L: Operation + Clone,
+    R: Operation + Clone,
 {
     fn call(&self, values: &[Key]) -> Key {
         self.0.call(values).max(self.1.call(values))
@@ -899,8 +916,8 @@ where
 
 impl<T, F, O> Operation for Fold<T, F>
 where
-    T: Operation,
-    F: Fn(&[Key]) -> O,
+    T: Operation + Clone,
+    F: Fn(&[Key]) -> O + Clone,
     O: Into<Key>,
 {
     fn call(&self, values: &[Key]) -> Key {
@@ -923,9 +940,9 @@ where
 
 impl<L, R, F, O> Operation for CombineTwo<L, R, F>
 where
-    L: Operation,
-    R: Operation,
-    F: Fn(Key, Key) -> O,
+    L: Operation + Clone,
+    R: Operation + Clone,
+    F: Fn(Key, Key) -> O + Clone,
     O: Into<Key>,
 {
     fn call(&self, values: &[Key]) -> Key {
@@ -940,10 +957,10 @@ where
 
 impl<T1, T2, T3, F, O> Operation for CombineThree<T1, T2, T3, F>
 where
-    T1: Operation,
-    T2: Operation,
-    T3: Operation,
-    F: Fn(Key, Key, Key) -> O,
+    T1: Operation + Clone,
+    T2: Operation + Clone,
+    T3: Operation + Clone,
+    F: Fn(Key, Key, Key) -> O + Clone,
     O: Into<Key>,
 {
     fn call(&self, values: &[Key]) -> Key {
@@ -964,7 +981,7 @@ where
 
 impl<F, O> Operation for Combine<F>
 where
-    F: Fn(&[Key]) -> O,
+    F: Fn(&[Key]) -> O + Clone,
     O: Into<Key>,
 {
     fn call(&self, values: &[Key]) -> Key {
@@ -990,12 +1007,12 @@ impl CombineBuilder {
     pub fn push<TR, R>(mut self, expr: TR) -> Self
     where
         TR: Expr<Op = R>,
-        R: Operation + 'static,
+        R: Operation + Clone + 'static,
     {
         let mut expr = expr.into_composite();
         self.0.extend(expr.dice);
         expr.op.shift_indices(self.0.len());
-        self.1.push(Box::new(expr.op));
+        self.1.push(expr.op.into_ptr());
         self
     }
 
@@ -1004,13 +1021,13 @@ impl CombineBuilder {
     where
         I: IntoIterator<Item = TR>,
         TR: Expr<Op = R>,
-        R: Operation + 'static,
+        R: Operation + Clone + 'static,
     {
         for i in iter {
             let mut i = i.into_composite();
             i.op.shift_indices(self.0.len());
             self.0.extend(i.dice);
-            self.1.push(Box::new(i.op));
+            self.1.push(i.op.into_ptr());
         }
         self
     }
@@ -1018,7 +1035,7 @@ impl CombineBuilder {
     #[must_use]
     pub fn build<F>(self, op: F) -> Composite<Combine<F>>
     where
-        F: Fn(&[Key]) -> Key + 'static,
+        F: Fn(&[Key]) -> Key + Clone + 'static,
     {
         Composite {
             dice: self.0,
@@ -1029,7 +1046,7 @@ impl CombineBuilder {
 
 impl<T> Operation for Sum<T>
 where
-    T: Operation,
+    T: Operation + Clone,
 {
     fn call(&self, values: &[Key]) -> Key {
         self.0.iter().map(|x| x.call(values)).sum()
@@ -1044,7 +1061,7 @@ where
 
 impl<T> Operation for Product<T>
 where
-    T: Operation,
+    T: Operation + Clone,
 {
     fn call(&self, values: &[Key]) -> Key {
         self.0.iter().map(|x| x.call(values)).product()
@@ -1059,7 +1076,7 @@ where
 
 impl<T> Operation for MinOf<T>
 where
-    T: Operation,
+    T: Operation + Clone,
 {
     fn call(&self, values: &[Key]) -> Key {
         self.0.iter().map(|x| x.call(values)).min().unwrap_or(0)
@@ -1074,7 +1091,7 @@ where
 
 impl<T> Operation for MaxOf<T>
 where
-    T: Operation,
+    T: Operation + Clone,
 {
     fn call(&self, values: &[Key]) -> Key {
         self.0.iter().map(|x| x.call(values)).max().unwrap_or(0)
@@ -1089,8 +1106,8 @@ where
 
 impl<T, F> Operation for Any<T, F>
 where
-    T: Operation,
-    F: Fn(Key) -> bool,
+    T: Operation + Clone,
+    F: Fn(Key) -> bool + Clone,
 {
     fn call(&self, values: &[Key]) -> Key {
         self.0
@@ -1109,8 +1126,8 @@ where
 
 impl<T, F> Operation for All<T, F>
 where
-    T: Operation,
-    F: Fn(Key) -> bool,
+    T: Operation + Clone,
+    F: Fn(Key) -> bool + Clone,
 {
     fn call(&self, values: &[Key]) -> Key {
         self.0
@@ -1129,10 +1146,10 @@ where
 
 impl<F, C, L, R> Operation for Branch<F, C, L, R>
 where
-    F: Fn(Key) -> bool,
-    C: Operation,
-    L: Operation,
-    R: Operation,
+    F: Fn(Key) -> bool + Clone,
+    C: Operation + Clone,
+    L: Operation + Clone,
+    R: Operation + Clone,
 {
     fn call(&self, values: &[Key]) -> Key {
         if self.0(self.1.call(values)) {
@@ -1161,7 +1178,7 @@ impl Operation for Erased {
 
 impl<T> Expr for Composite<T>
 where
-    T: Operation + 'static,
+    T: Operation + Clone + 'static,
 {
     type Op = T;
 
