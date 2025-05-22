@@ -104,6 +104,16 @@ impl Die {
     }
 
     #[must_use]
+    pub fn keys(&self) -> &[Key] {
+        &self.keys
+    }
+
+    #[must_use]
+    pub fn outcomes(&self) -> &[Value] {
+        &self.outcomes
+    }
+
+    #[must_use]
     pub fn denom(&self) -> Value {
         self.denom
     }
