@@ -1,24 +1,26 @@
 use std::fmt::Debug;
 
 use super::Operation;
-use crate::util::{BigUint, DieList, Value};
+use crate::util::{BigUint, DieList, OverflowResult, Value};
 use crate::Die;
 
 #[derive(Clone, Debug)]
-pub struct Composite<T>
+pub struct Composite<K, T>
 where
-    T: Operation + Clone + Debug + Send + 'static,
+    K: Clone + Copy + Ord + Debug,
+    T: Operation<K> + Clone + Debug + Send + 'static,
 {
-    pub dice: DieList,
+    pub dice: DieList<K>,
     pub op: T,
 }
 
-impl<T> Composite<T>
+impl<K, T> Composite<K, T>
 where
-    T: Operation + Clone + Debug + Send + 'static,
+    K: Clone + Copy + Ord + Debug,
+    T: Operation<K> + Clone + Debug + Send + 'static,
 {
-    pub fn eval(self) -> Die {
-        Die::eval(self.dice, move |x| self.op.call(x))
+    pub fn eval_exact(self) -> OverflowResult<Die<T::Output>> {
+        Die::eval_exact(self.dice, move |x| self.op.call(x))
     }
 
     pub fn denom(&self) -> BigUint {
@@ -30,5 +32,16 @@ where
 
     pub fn can_eval_directly(&self) -> bool {
         self.denom() < BigUint::from(Value::MAX)
+    }
+}
+
+impl<K, T> Composite<K, T>
+where
+    K: Clone + Copy + Ord + Debug,
+    T: Operation<K> + Clone + Debug + Send + 'static,
+    T::Output: TryInto<f64>,
+{
+    pub fn eval(self) -> Result<Die<T::Output>, <T::Output as TryInto<f64>>::Error> {
+        Die::eval(self.dice, move |x| self.op.call(x))
     }
 }

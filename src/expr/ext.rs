@@ -10,17 +10,27 @@ use super::{
 use crate::util::{DieList, Key};
 use crate::Die;
 
-pub trait Expr: Clone + Debug + Send {
-    type Op: Operation + Clone + Debug + Send + 'static;
+pub trait Expr<K = Key>: Clone + Debug + Send
+where
+    K: Clone + Copy + Ord + Debug + Send,
+{
+    type Op: Operation<K> + Clone + Debug + Send + 'static;
 
-    fn into_composite(self) -> Composite<Self::Op>;
+    fn into_composite(self) -> Composite<K, Self::Op>;
 
-    fn eval(self) -> Die;
-
-    fn map<F, O>(self, op: F) -> Composite<Map<Self::Op, F>>
+    fn eval(
+        self,
+    ) -> Result<
+        Die<<Self::Op as Operation<K>>::Output>,
+        <<Self::Op as Operation<K>>::Output as TryInto<f64>>::Error,
+    >
     where
-        F: Fn(Key) -> O + Clone + Send,
-        O: Into<Key>,
+        <Self::Op as Operation<K>>::Output: TryInto<f64>;
+
+    fn map<F, O>(self, op: F) -> Composite<K, Map<Self::Op, F>>
+    where
+        F: Fn(<Self::Op as Operation<K>>::Output) -> O + Clone + Send,
+        O: Clone + Copy + Ord,
     {
         let me = self.into_composite();
         Composite {
@@ -29,7 +39,11 @@ pub trait Expr: Clone + Debug + Send {
         }
     }
 
-    fn neg(self) -> Composite<Neg<Self::Op>> {
+    fn neg(self) -> Composite<K, Neg<Self::Op>>
+    where
+        <Self::Op as Operation<K>>::Output: std::ops::Neg,
+        <<Self::Op as Operation<K>>::Output as std::ops::Neg>::Output: Clone + Copy + Ord,
+    {
         let me = self.into_composite();
         Composite {
             dice: me.dice,
@@ -37,7 +51,12 @@ pub trait Expr: Clone + Debug + Send {
         }
     }
 
-    fn kadd(self, rhs: Key) -> Composite<AddKey<Self::Op>> {
+    fn kadd<R>(self, rhs: R) -> Composite<K, AddKey<Self::Op, R>>
+    where
+        R: Clone + Copy + Debug + Send,
+        <Self::Op as Operation<K>>::Output: std::ops::Add<R>,
+        <<Self::Op as Operation<K>>::Output as std::ops::Add<R>>::Output: Clone + Copy + Ord,
+    {
         let me = self.into_composite();
         Composite {
             dice: me.dice,
@@ -45,7 +64,12 @@ pub trait Expr: Clone + Debug + Send {
         }
     }
 
-    fn ksub(self, rhs: Key) -> Composite<AddKey<Self::Op>> {
+    fn ksub<R>(self, rhs: R) -> Composite<K, AddKey<Self::Op, R>>
+    where
+        R: Clone + Copy + Debug + Send + std::ops::Neg<Output = R>,
+        <Self::Op as Operation<K>>::Output: std::ops::Add<R>,
+        <<Self::Op as Operation<K>>::Output as std::ops::Add<R>>::Output: Clone + Copy + Ord,
+    {
         let me = self.into_composite();
         Composite {
             dice: me.dice,
@@ -53,7 +77,12 @@ pub trait Expr: Clone + Debug + Send {
         }
     }
 
-    fn kmul(self, rhs: Key) -> Composite<MulKey<Self::Op>> {
+    fn kmul<R>(self, rhs: R) -> Composite<K, MulKey<Self::Op, R>>
+    where
+        R: Clone + Copy + Debug + Send,
+        <Self::Op as Operation<K>>::Output: std::ops::Mul<R>,
+        <<Self::Op as Operation<K>>::Output as std::ops::Mul<R>>::Output: Clone + Copy + Ord,
+    {
         let me = self.into_composite();
         Composite {
             dice: me.dice,
@@ -61,7 +90,12 @@ pub trait Expr: Clone + Debug + Send {
         }
     }
 
-    fn kdiv(self, rhs: Key) -> Composite<DivKey<Self::Op>> {
+    fn kdiv<R>(self, rhs: R) -> Composite<K, DivKey<Self::Op, R>>
+    where
+        R: Clone + Copy + Debug + Send,
+        <Self::Op as Operation<K>>::Output: std::ops::Div<R>,
+        <<Self::Op as Operation<K>>::Output as std::ops::Div<R>>::Output: Clone + Copy + Ord,
+    {
         let me = self.into_composite();
         Composite {
             dice: me.dice,
@@ -69,7 +103,10 @@ pub trait Expr: Clone + Debug + Send {
         }
     }
 
-    fn not(self) -> Composite<Not<Self::Op>> {
+    fn not(self) -> Composite<K, Not<Self::Op>>
+    where
+        <Self::Op as Operation<K>>::Output: Into<bool>,
+    {
         let me = self.into_composite();
         Composite {
             dice: me.dice,
@@ -77,7 +114,13 @@ pub trait Expr: Clone + Debug + Send {
         }
     }
 
-    fn contains<const N: usize>(self, rhs: [Key; N]) -> Composite<Eq<Self::Op, N>> {
+    fn contains<const N: usize>(
+        self,
+        rhs: [<Self::Op as Operation<K>>::Output; N],
+    ) -> Composite<K, Eq<Self::Op, <Self::Op as Operation<K>>::Output, N>>
+    where
+        <Self::Op as Operation<K>>::Output: std::cmp::Eq + Debug + Send,
+    {
         let me = self.into_composite();
         Composite {
             dice: me.dice,
@@ -85,12 +128,24 @@ pub trait Expr: Clone + Debug + Send {
         }
     }
 
-    fn eq(self, rhs: Key) -> Composite<Eq<Self::Op>> {
+    fn eq(
+        self,
+        rhs: <Self::Op as Operation<K>>::Output,
+    ) -> Composite<K, Eq<Self::Op, <Self::Op as Operation<K>>::Output>>
+    where
+        <Self::Op as Operation<K>>::Output: std::cmp::Eq + Debug + Send,
+    {
         self.contains([rhs])
     }
 
-    fn neq(self, rhs: Key) -> Composite<Not<Eq<Self::Op>>> {
-        self.eq(rhs).not()
+    fn neq(
+        self,
+        rhs: <Self::Op as Operation<K>>::Output,
+    ) -> Composite<K, Not<Eq<Self::Op, <Self::Op as Operation<K>>::Output>>>
+    where
+        <Self::Op as Operation<K>>::Output: std::cmp::Eq + Debug + Send,
+    {
+        Expr::not(Expr::eq(self, rhs))
     }
 
     fn cmp(self, rhs: Key) -> Composite<Cmp<Self::Op>> {
@@ -279,13 +334,20 @@ pub trait Expr: Clone + Debug + Send {
     }
 }
 
-#[derive(Clone, Default)]
-pub struct DynFoldBuilder(DieList, Vec<Boxed>);
+#[derive(Clone)]
+pub struct DynFoldBuilder<K, O>(DieList<K>, Vec<Boxed<K, O>>)
+where
+    K: Clone + Copy + Ord,
+    O: Clone + Copy + Ord;
 
 impl Die {
     #[must_use]
-    pub fn dyn_fold() -> DynFoldBuilder {
-        DynFoldBuilder::default()
+    pub fn dyn_fold<K, O>() -> DynFoldBuilder<K, O>
+    where
+        K: Clone + Copy + Ord,
+        O: Clone + Copy + Ord,
+    {
+        DynFoldBuilder(Vec::new(), Vec::new())
     }
 
     pub fn fold_two<T1, T2, F, O>(e1: T1, e2: T2, op: F) -> Composite<FoldTwo<T1::Op, T2::Op, F>>
@@ -524,37 +586,51 @@ impl Die {
     }
 }
 
-impl<T> Expr for Composite<T>
+impl<K, T> Expr<K> for Composite<K, T>
 where
-    T: Operation + Clone + Debug + Send + 'static,
+    T: Operation<K> + Clone + Debug + Send + 'static,
+    K: Clone + Copy + Ord + Debug + Send,
 {
     type Op = T;
 
-    fn into_composite(self) -> Composite<Self::Op> {
+    fn into_composite(self) -> Composite<K, Self::Op> {
         self
     }
 
-    fn eval(self) -> Die {
-        self.eval()
+    fn eval(self) -> Result<Die<T::Output>, <T::Output as TryInto<f64>>::Error>
+    where
+        T::Output: TryInto<f64>,
+    {
+        Composite::eval(self)
     }
 }
 
-impl Expr for Die {
+impl<K> Expr<K> for Die<K>
+where
+    K: Clone + Copy + Ord + Debug + Send,
+{
     type Op = Id;
 
-    fn into_composite(self) -> Composite<Self::Op> {
+    fn into_composite(self) -> Composite<K, Self::Op> {
         Composite {
             dice: vec![self],
             op: Id(0),
         }
     }
 
-    fn eval(self) -> Die {
-        self
+    fn eval(self) -> Result<Die<K>, K::Error>
+    where
+        K: TryInto<f64>,
+    {
+        Ok(self)
     }
 }
 
-impl DynFoldBuilder {
+impl<K, O> DynFoldBuilder<K, O>
+where
+    K: Clone + Copy + Ord,
+    O: Clone + Copy + Ord,
+{
     #[must_use]
     pub fn push<T>(mut self, expr: T) -> Self
     where

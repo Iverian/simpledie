@@ -3,7 +3,7 @@ use rand::rngs::ThreadRng;
 use rand::{thread_rng, RngCore};
 
 use crate::util::{
-    die_map, Entry, Key, Value, APPROX_ACCURACY, APPROX_MAX_SAMPLE_SIZE, APPROX_MIN_SAMPLE_SIZE,
+    die_map, Entry, Value, APPROX_ACCURACY, APPROX_MAX_SAMPLE_SIZE, APPROX_MIN_SAMPLE_SIZE,
 };
 use crate::Die;
 
@@ -33,9 +33,10 @@ where
     G: RngCore,
 {
     #[must_use]
-    pub fn approximate<F>(&mut self, mut op: F) -> Die
+    pub fn approximate<K, F>(&mut self, mut op: F) -> Result<Die<K>, K::Error>
     where
-        F: FnMut(&mut G) -> Key,
+        K: Clone + Copy + Ord + TryInto<f64>,
+        F: FnMut(&mut G) -> K,
     {
         let mut outcomes = die_map();
         let mut s = 0f64;
@@ -53,7 +54,7 @@ where
                 }
             }
 
-            s += f64::from(k);
+            s += k.try_into()?
         }
 
         for i in self.min_sample_size..self.max_sample_size {
@@ -69,7 +70,7 @@ where
             }
 
             let sp = s;
-            s += f64::from(k);
+            s += k.try_into()?;
             let mp = sp / f64::from(i - 1);
             let mc = s / f64::from(i);
             if (mp - mc).abs() < self.accuracy {
@@ -81,25 +82,6 @@ where
         let denom = Value::from(denom.unwrap_or(self.max_sample_size));
         println!("approx iterations: {denom}");
 
-        Die::from_map(denom, outcomes)
-    }
-
-    #[must_use]
-    pub fn count_throws<P, F>(&mut self, die: Die, init: Key, pred: P, op: F) -> Die
-    where
-        P: Fn(Key) -> bool,
-        F: Fn(Key, Key) -> Key,
-    {
-        let steps = Key::try_from(self.max_sample_size).unwrap_or(Key::MAX);
-        self.approximate(move |g| {
-            let mut value = init;
-            for i in 0..steps {
-                value = op(value, die.sample(g));
-                if !pred(value) {
-                    return i;
-                }
-            }
-            steps
-        })
+        Ok(Die::<K>::from_map(denom, outcomes))
     }
 }

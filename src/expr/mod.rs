@@ -1,6 +1,5 @@
 pub mod composite;
 pub mod ext;
-pub mod overloading;
 
 use std::fmt::Debug;
 
@@ -8,12 +7,17 @@ use dyn_clone::DynClone;
 
 use crate::util::Key;
 
-pub trait Operation: Debug + DynClone {
-    fn call(&self, values: &[Key]) -> Key;
+pub trait Operation<K>: Debug + DynClone
+where
+    K: Clone + Copy + Ord,
+{
+    type Output: Clone + Copy + Ord;
+
+    fn call(&self, values: &[K]) -> Self::Output;
 
     fn shift_indices(&mut self, value: usize);
 
-    fn boxed(self) -> Boxed
+    fn boxed(self) -> Boxed<K, Self::Output>
     where
         Self: Sized + Send + 'static,
     {
@@ -21,7 +25,15 @@ pub trait Operation: Debug + DynClone {
     }
 }
 
-dyn_clone::clone_trait_object!(Operation);
+impl<K, O> Clone for Box<dyn Operation<K, Output = O>>
+where
+    K: Clone + Copy + Ord,
+    O: Clone + Copy + Ord,
+{
+    fn clone(&self) -> Self {
+        dyn_clone::clone_box(&**self)
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Id(usize);
@@ -33,22 +45,22 @@ pub struct Map<T, F>(T, F);
 pub struct Neg<T>(T);
 
 #[derive(Clone, Copy, Debug)]
-pub struct AddKey<T>(T, Key);
+pub struct AddKey<T, R>(T, R);
 
 #[derive(Clone, Copy, Debug)]
-pub struct MulKey<T>(T, Key);
+pub struct MulKey<T, R>(T, R);
 
 #[derive(Clone, Copy, Debug)]
-pub struct DivKey<T>(T, Key);
+pub struct DivKey<T, R>(T, R);
 
 #[derive(Clone, Copy, Debug)]
 pub struct Not<T>(T);
 
 #[derive(Clone, Debug)]
-pub struct Eq<T, const N: usize = 1>(T, [Key; N]);
+pub struct Eq<T, R, const N: usize = 1>(T, [R; N]);
 
 #[derive(Clone, Copy, Debug)]
-pub struct Cmp<T>(T, Key);
+pub struct Cmp<T, R>(T, R);
 
 #[derive(Clone, Copy, Debug)]
 pub struct Add<L, R>(L, R);
@@ -101,11 +113,19 @@ pub struct All<T, F>(Vec<T>, F);
 #[derive(Clone, Copy)]
 pub struct Branch<F, C, L, R>(F, C, L, R);
 
-#[derive(Clone, Debug)]
-pub struct Boxed(Box<dyn Operation + Send + 'static>);
+#[derive(Clone)]
+pub struct Boxed<K, O>(Box<dyn Operation<K, Output = O> + 'static>)
+where
+    K: Clone + Copy + Ord,
+    O: Clone + Copy + Ord;
 
-impl Operation for Id {
-    fn call(&self, values: &[Key]) -> Key {
+impl<K> Operation<K> for Id
+where
+    K: Clone + Copy + Ord,
+{
+    type Output = K;
+
+    fn call(&self, values: &[K]) -> Self::Output {
         values[self.0]
     }
 
@@ -114,14 +134,17 @@ impl Operation for Id {
     }
 }
 
-impl<T, F, O> Operation for Map<T, F>
+impl<K, T, F, O> Operation<K> for Map<T, F>
 where
-    T: Operation + Clone,
-    F: Fn(Key) -> O + Clone,
-    O: Into<Key>,
+    K: Clone + Copy + Ord,
+    T: Operation<K> + Clone,
+    F: Fn(T::Output) -> O + Clone,
+    O: Clone + Copy + Ord,
 {
-    fn call(&self, values: &[Key]) -> Key {
-        self.1(self.0.call(values)).into()
+    type Output = O;
+
+    fn call(&self, values: &[K]) -> Self::Output {
+        self.1(self.0.call(values))
     }
 
     fn shift_indices(&mut self, value: usize) {
@@ -138,11 +161,16 @@ where
     }
 }
 
-impl<T> Operation for Neg<T>
+impl<K, T> Operation<K> for Neg<T>
 where
-    T: Operation + Clone,
+    K: Clone + Copy + Ord,
+    T: Operation<K> + Clone,
+    T::Output: std::ops::Neg,
+    <T::Output as std::ops::Neg>::Output: Clone + Copy + Ord,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    type Output = <T::Output as std::ops::Neg>::Output;
+
+    fn call(&self, values: &[K]) -> Self::Output {
         -self.0.call(values)
     }
 
@@ -151,11 +179,17 @@ where
     }
 }
 
-impl<T> Operation for AddKey<T>
+impl<K, T, R> Operation<K> for AddKey<T, R>
 where
-    T: Operation + Clone,
+    K: Clone + Copy + Ord,
+    R: Clone + Copy + Debug,
+    T: Operation<K> + Clone,
+    T::Output: std::ops::Add<R>,
+    <T::Output as std::ops::Add<R>>::Output: Clone + Copy + Ord,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    type Output = <T::Output as std::ops::Add<R>>::Output;
+
+    fn call(&self, values: &[K]) -> Self::Output {
         self.0.call(values) + self.1
     }
 
@@ -164,11 +198,17 @@ where
     }
 }
 
-impl<T> Operation for MulKey<T>
+impl<K, T, R> Operation<K> for MulKey<T, R>
 where
-    T: Operation + Clone,
+    K: Clone + Copy + Ord,
+    R: Clone + Copy + Debug,
+    T: Operation<K> + Clone,
+    T::Output: std::ops::Mul<R>,
+    <T::Output as std::ops::Mul<R>>::Output: Clone + Copy + Ord,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    type Output = <T::Output as std::ops::Mul<R>>::Output;
+
+    fn call(&self, values: &[K]) -> Self::Output {
         self.0.call(values) * self.1
     }
 
@@ -177,11 +217,17 @@ where
     }
 }
 
-impl<T> Operation for DivKey<T>
+impl<K, T, R> Operation<K> for DivKey<T, R>
 where
-    T: Operation + Clone,
+    K: Clone + Copy + Ord,
+    R: Clone + Copy + Debug,
+    T: Operation<K> + Clone,
+    T::Output: std::ops::Div<R>,
+    <T::Output as std::ops::Div<R>>::Output: Clone + Copy + Ord,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    type Output = <T::Output as std::ops::Div<R>>::Output;
+
+    fn call(&self, values: &[K]) -> Self::Output {
         self.0.call(values) / self.1
     }
 
@@ -190,15 +236,16 @@ where
     }
 }
 
-impl<T> Operation for Not<T>
+impl<K, T> Operation<K> for Not<T>
 where
-    T: Operation + Clone,
+    K: Clone + Copy + Ord,
+    T: Operation<K> + Clone,
+    T::Output: Into<bool>,
 {
-    fn call(&self, values: &[Key]) -> Key {
-        Key::from(match self.0.call(values) {
-            0 => 1,
-            _ => 0,
-        })
+    type Output = bool;
+
+    fn call(&self, values: &[K]) -> Self::Output {
+        !self.0.call(values).into()
     }
 
     fn shift_indices(&mut self, value: usize) {
@@ -206,13 +253,16 @@ where
     }
 }
 
-impl<T, const N: usize> Operation for Eq<T, N>
+impl<K, T, const N: usize> Operation<K> for Eq<T, T::Output, N>
 where
-    T: Operation + Clone,
+    K: Clone + Copy + Ord,
+    T: Operation<K> + Clone,
+    T::Output: std::cmp::Eq + Debug,
 {
-    fn call(&self, values: &[Key]) -> Key {
-        let v = self.0.call(values);
-        Key::from(self.1.contains(&v))
+    type Output = bool;
+
+    fn call(&self, values: &[K]) -> Self::Output {
+        self.1.contains(&self.0.call(values))
     }
 
     fn shift_indices(&mut self, value: usize) {
@@ -220,12 +270,16 @@ where
     }
 }
 
-impl<T> Operation for Cmp<T>
+impl<K, T> Operation<K> for Cmp<T, T::Output>
 where
-    T: Operation + Clone,
+    K: Clone + Copy + Ord,
+    T: Operation<K> + Clone,
+    T::Output: Debug,
 {
-    fn call(&self, values: &[Key]) -> Key {
-        self.0.call(values).cmp(&self.1) as Key
+    type Output = std::cmp::Ordering;
+
+    fn call(&self, values: &[K]) -> Self::Output {
+        self.0.call(values).cmp(&self.1)
     }
 
     fn shift_indices(&mut self, value: usize) {
@@ -233,12 +287,17 @@ where
     }
 }
 
-impl<L, R> Operation for Add<L, R>
+impl<K, L, R> Operation<K> for Add<L, R>
 where
-    L: Operation + Clone,
-    R: Operation + Clone,
+    K: Clone + Copy + Ord,
+    L: Operation<K> + Clone,
+    R: Operation<K> + Clone,
+    L::Output: std::ops::Add<R::Output>,
+    <L::Output as std::ops::Add<R::Output>>::Output: Clone + Copy + Ord,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    type Output = <L::Output as std::ops::Add<R::Output>>::Output;
+
+    fn call(&self, values: &[K]) -> Self::Output {
         self.0.call(values) + self.1.call(values)
     }
 
@@ -248,12 +307,17 @@ where
     }
 }
 
-impl<L, R> Operation for Mul<L, R>
+impl<K, L, R> Operation<K> for Mul<L, R>
 where
-    L: Operation + Clone,
-    R: Operation + Clone,
+    K: Clone + Copy + Ord,
+    L: Operation<K> + Clone,
+    R: Operation<K> + Clone,
+    L::Output: std::ops::Mul<R::Output>,
+    <L::Output as std::ops::Mul<R::Output>>::Output: Clone + Copy + Ord,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    type Output = <L::Output as std::ops::Mul<R::Output>>::Output;
+
+    fn call(&self, values: &[K]) -> Self::Output {
         self.0.call(values) * self.1.call(values)
     }
 
@@ -263,12 +327,17 @@ where
     }
 }
 
-impl<L, R> Operation for Div<L, R>
+impl<K, L, R> Operation<K> for Div<L, R>
 where
-    L: Operation + Clone,
-    R: Operation + Clone,
+    K: Clone + Copy + Ord,
+    L: Operation<K> + Clone,
+    R: Operation<K> + Clone,
+    L::Output: std::ops::Div<R::Output>,
+    <L::Output as std::ops::Div<R::Output>>::Output: Clone + Copy + Ord,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    type Output = <L::Output as std::ops::Div<R::Output>>::Output;
+
+    fn call(&self, values: &[K]) -> Self::Output {
         self.0.call(values) / self.1.call(values)
     }
 
@@ -278,12 +347,15 @@ where
     }
 }
 
-impl<L, R> Operation for Min<L, R>
+impl<K, L, R> Operation<K> for Min<L, R>
 where
-    L: Operation + Clone,
-    R: Operation + Clone,
+    K: Clone + Copy + Ord,
+    L: Operation<K, Output = K> + Clone,
+    R: Operation<K, Output = K> + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    type Output = K;
+
+    fn call(&self, values: &[K]) -> Self::Output {
         self.0.call(values).min(self.1.call(values))
     }
 
@@ -293,12 +365,15 @@ where
     }
 }
 
-impl<L, R> Operation for Max<L, R>
+impl<K, L, R> Operation<K> for Max<L, R>
 where
-    L: Operation + Clone,
-    R: Operation + Clone,
+    K: Clone + Copy + Ord,
+    L: Operation<K, Output = K> + Clone,
+    R: Operation<K, Output = K> + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    type Output = K;
+
+    fn call(&self, values: &[K]) -> Self::Output {
         self.0.call(values).max(self.1.call(values))
     }
 
@@ -308,13 +383,16 @@ where
     }
 }
 
-impl<T, F, O> Operation for Fold<T, F>
+impl<K, T, F, O> Operation<K> for Fold<T, F>
 where
-    T: Operation + Clone,
-    F: Fn(&[Key]) -> O + Clone,
-    O: Into<Key>,
+    K: Clone + Copy + Ord,
+    O: Clone + Copy + Ord,
+    T: Operation<K> + Clone,
+    F: Fn(&[T::Output]) -> O + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    type Output = O;
+
+    fn call(&self, values: &[K]) -> Self::Output {
         self.1(
             self.0
                 .iter()
@@ -341,15 +419,18 @@ where
     }
 }
 
-impl<T1, T2, F, O> Operation for FoldTwo<T1, T2, F>
+impl<K, T1, T2, F, O> Operation<K> for FoldTwo<T1, T2, F>
 where
-    T1: Operation + Clone,
-    T2: Operation + Clone,
-    F: Fn(Key, Key) -> O + Clone,
-    O: Into<Key>,
+    K: Clone + Copy + Ord,
+    O: Clone + Copy + Ord,
+    T1: Operation<K> + Clone,
+    T2: Operation<K> + Clone,
+    F: Fn(T1::Output, T2::Output) -> O + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
-        self.2(self.0.call(values), self.1.call(values)).into()
+    type Output = O;
+
+    fn call(&self, values: &[K]) -> Self::Output {
+        self.2(self.0.call(values), self.1.call(values))
     }
 
     fn shift_indices(&mut self, value: usize) {
@@ -371,21 +452,24 @@ where
     }
 }
 
-impl<T1, T2, T3, F, O> Operation for FoldThree<T1, T2, T3, F>
+impl<K, T1, T2, T3, F, O> Operation<K> for FoldThree<T1, T2, T3, F>
 where
-    T1: Operation + Clone,
-    T2: Operation + Clone,
-    T3: Operation + Clone,
-    F: Fn(Key, Key, Key) -> O + Clone,
+    K: Clone + Copy + Ord,
+    O: Clone + Copy + Ord,
+    T1: Operation<K> + Clone,
+    T2: Operation<K> + Clone,
+    T3: Operation<K> + Clone,
+    F: Fn(T1::Output, T2::Output, T3::Output) -> O + Clone,
     O: Into<Key>,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    type Output = O;
+
+    fn call(&self, values: &[K]) -> Self::Output {
         self.3(
             self.0.call(values),
             self.1.call(values),
             self.2.call(values),
         )
-        .into()
     }
 
     fn shift_indices(&mut self, value: usize) {
@@ -410,16 +494,19 @@ where
     }
 }
 
-impl<T1, T2, T3, T4, F, O> Operation for FoldFour<T1, T2, T3, T4, F>
+impl<K, T1, T2, T3, T4, F, O> Operation<K> for FoldFour<T1, T2, T3, T4, F>
 where
-    T1: Operation + Clone,
-    T2: Operation + Clone,
-    T3: Operation + Clone,
-    T4: Operation + Clone,
-    F: Fn(Key, Key, Key, Key) -> O + Clone,
-    O: Into<Key>,
+    K: Clone + Copy + Ord,
+    O: Clone + Copy + Ord,
+    T1: Operation<K> + Clone,
+    T2: Operation<K> + Clone,
+    T3: Operation<K> + Clone,
+    T4: Operation<K> + Clone,
+    F: Fn(T1::Output, T2::Output, T3::Output, T4::Output) -> O + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    type Output = O;
+
+    fn call(&self, values: &[K]) -> Self::Output {
         self.4(
             self.0.call(values),
             self.1.call(values),
@@ -454,17 +541,21 @@ where
     }
 }
 
-impl<T1, T2, T3, T4, T5, F, O> Operation for FoldFive<T1, T2, T3, T4, T5, F>
+impl<K, T1, T2, T3, T4, T5, F, O> Operation<K> for FoldFive<T1, T2, T3, T4, T5, F>
 where
-    T1: Operation + Clone,
-    T2: Operation + Clone,
-    T3: Operation + Clone,
-    T4: Operation + Clone,
-    T5: Operation + Clone,
-    F: Fn(Key, Key, Key, Key, Key) -> O + Clone,
+    K: Clone + Copy + Ord,
+    O: Clone + Copy + Ord,
+    T1: Operation<K> + Clone,
+    T2: Operation<K> + Clone,
+    T3: Operation<K> + Clone,
+    T4: Operation<K> + Clone,
+    T5: Operation<K> + Clone,
+    F: Fn(T1::Output, T2::Output, T3::Output, T4::Output, T5::Output) -> O + Clone,
     O: Into<Key>,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    type Output = O;
+
+    fn call(&self, values: &[K]) -> Self::Output {
         self.5(
             self.0.call(values),
             self.1.call(values),
@@ -472,7 +563,6 @@ where
             self.3.call(values),
             self.4.call(values),
         )
-        .into()
     }
 
     fn shift_indices(&mut self, value: usize) {
@@ -503,11 +593,15 @@ where
     }
 }
 
-impl<T> Operation for Sum<T>
+impl<K, T> Operation<K> for Sum<T>
 where
-    T: Operation + Clone,
+    K: Clone + Copy + Ord,
+    T: Operation<K> + Clone,
+    T::Output: std::iter::Sum,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    type Output = T::Output;
+
+    fn call(&self, values: &[K]) -> Self::Output {
         self.0.iter().map(|x| x.call(values)).sum()
     }
 
@@ -518,11 +612,15 @@ where
     }
 }
 
-impl<T> Operation for Product<T>
+impl<K, T> Operation<K> for Product<T>
 where
-    T: Operation + Clone,
+    K: Clone + Copy + Ord,
+    T: Operation<K> + Clone,
+    T::Output: std::iter::Product,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    type Output = T::Output;
+
+    fn call(&self, values: &[K]) -> Self::Output {
         self.0.iter().map(|x| x.call(values)).product()
     }
 
@@ -533,12 +631,15 @@ where
     }
 }
 
-impl<T> Operation for MinOf<T>
+impl<K, T> Operation<K> for MinOf<T>
 where
-    T: Operation + Clone,
+    K: Clone + Copy + Ord,
+    T: Operation<K> + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
-        self.0.iter().map(|x| x.call(values)).min().unwrap_or(0)
+    type Output = T::Output;
+
+    fn call(&self, values: &[K]) -> Self::Output {
+        self.0.iter().map(|x| x.call(values)).min().unwrap()
     }
 
     fn shift_indices(&mut self, value: usize) {
@@ -548,12 +649,15 @@ where
     }
 }
 
-impl<T> Operation for MaxOf<T>
+impl<K, T> Operation<K> for MaxOf<T>
 where
-    T: Operation + Clone,
+    K: Clone + Copy + Ord,
+    T: Operation<K> + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
-        self.0.iter().map(|x| x.call(values)).max().unwrap_or(0)
+    type Output = T::Output;
+
+    fn call(&self, values: &[K]) -> Self::Output {
+        self.0.iter().map(|x| x.call(values)).max().unwrap()
     }
 
     fn shift_indices(&mut self, value: usize) {
@@ -563,17 +667,16 @@ where
     }
 }
 
-impl<T, F> Operation for Any<T, F>
+impl<K, T, F> Operation<K> for Any<T, F>
 where
-    T: Operation + Clone,
-    F: Fn(Key) -> bool + Clone,
+    K: Clone + Copy + Ord,
+    T: Operation<K> + Clone,
+    F: Fn(T::Output) -> bool + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
-        self.0
-            .iter()
-            .map(|x| x.call(values))
-            .any(|x| self.1(x))
-            .into()
+    type Output = bool;
+
+    fn call(&self, values: &[K]) -> Self::Output {
+        self.0.iter().any(|x| self.1(x.call(values)))
     }
 
     fn shift_indices(&mut self, value: usize) {
@@ -592,17 +695,16 @@ where
     }
 }
 
-impl<T, F> Operation for All<T, F>
+impl<K, T, F> Operation<K> for All<T, F>
 where
-    T: Operation + Clone,
-    F: Fn(Key) -> bool + Clone,
+    K: Clone + Copy + Ord,
+    T: Operation<K> + Clone,
+    F: Fn(T::Output) -> bool + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
-        self.0
-            .iter()
-            .map(|x| x.call(values))
-            .all(|x| self.1(x))
-            .into()
+    type Output = bool;
+
+    fn call(&self, values: &[K]) -> Self::Output {
+        self.0.iter().all(|x| self.1(x.call(values)))
     }
 
     fn shift_indices(&mut self, value: usize) {
@@ -621,14 +723,18 @@ where
     }
 }
 
-impl<F, C, L, R> Operation for Branch<F, C, L, R>
+impl<K, O, F, C, L, R> Operation<K> for Branch<F, C, L, R>
 where
-    F: Fn(Key) -> bool + Clone,
-    C: Operation + Clone,
-    L: Operation + Clone,
-    R: Operation + Clone,
+    K: Clone + Copy + Ord,
+    O: Clone + Copy + Ord,
+    F: Fn(C::Output) -> bool + Clone,
+    C: Operation<K> + Clone,
+    L: Operation<K, Output = O> + Clone,
+    R: Operation<K, Output = O> + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    type Output = O;
+
+    fn call(&self, values: &[K]) -> Self::Output {
         if self.0(self.1.call(values)) {
             self.2.call(values)
         } else {
@@ -658,12 +764,28 @@ where
     }
 }
 
-impl Operation for Boxed {
-    fn call(&self, values: &[Key]) -> Key {
+impl<K, O> Operation<K> for Boxed<K, O>
+where
+    K: Clone + Copy + Ord,
+    O: Clone + Copy + Ord,
+{
+    type Output = O;
+
+    fn call(&self, values: &[K]) -> Self::Output {
         self.0.call(values)
     }
 
     fn shift_indices(&mut self, value: usize) {
         self.0.shift_indices(value);
+    }
+}
+
+impl<K, O> Debug for Boxed<K, O>
+where
+    K: Clone + Copy + Ord,
+    O: Clone + Copy + Ord,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Boxed").field(&self.0).finish()
     }
 }

@@ -11,21 +11,20 @@ mod util;
 use util::{Key, Value};
 
 #[derive(Debug, Clone)]
-pub struct Die {
+pub struct Die<K = Key>
+where
+    K: Clone + Copy + Ord,
+{
     denom: Value,
-    keys: Vec<Key>,
+    keys: Vec<K>,
     outcomes: Vec<Value>,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum EvalStrategy {
-    Any,
-    Approximate,
-    Exact,
-}
-
 #[derive(Debug, Clone)]
-pub struct Iter<'a> {
-    die: &'a Die,
+pub struct Iter<'a, K>
+where
+    K: Clone + Copy + Ord,
+{
+    die: &'a Die<K>,
     index: usize,
 }
