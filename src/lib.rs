@@ -17,6 +17,13 @@ pub struct Die {
     outcomes: Vec<Value>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum EvalStrategy {
+    Any,
+    Approximate,
+    Exact,
+}
+
 #[derive(Debug, Clone)]
 pub struct Iter<'a> {
     die: &'a Die,

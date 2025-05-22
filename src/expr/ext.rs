@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::cmp::{Ord, Ordering};
 use std::fmt::Debug;
 
 use super::composite::Composite;
@@ -9,24 +9,20 @@ use super::{
 };
 use crate::approx::Approx;
 use crate::util::{DieList, Key, OverflowResult};
-use crate::Die;
+use crate::{Die, EvalStrategy};
 
 pub trait Expr: Clone + Debug + Send {
     type Op: Operation + Clone + Debug + Send + 'static;
 
     fn into_composite(self) -> Composite<Self::Op>;
 
-    fn eval(self) -> Die {
-        self.into_composite().eval()
-    }
+    fn eval_with_strategy(self, strategy: EvalStrategy) -> OverflowResult<Die>;
 
-    fn eval_exact(self) -> OverflowResult<Die> {
-        self.into_composite().eval_exact()
-    }
+    fn eval(self) -> Die;
 
-    fn eval_approx(self, approx: Approx) -> Die {
-        self.into_composite().eval_approx(approx)
-    }
+    fn eval_exact(self) -> OverflowResult<Die>;
+
+    fn eval_approx(self, approx: Approx) -> Die;
 
     fn map<F, O>(self, op: F) -> Composite<Map<Self::Op, F>>
     where
@@ -207,67 +203,48 @@ pub trait Expr: Clone + Debug + Send {
         }
     }
 
-    fn fold_n<F, O>(self, size: usize, op: F) -> Composite<Fold<Self::Op, F>>
+    fn fold_n<F, O>(self, size: usize, op: F) -> Die
     where
-        F: Fn(&[Key]) -> O + Clone + Send,
+        F: Fn(Key, Key) -> O,
         O: Into<Key>,
     {
-        let (dice, expr) = self.into_composite().explode(size);
-        Composite {
-            dice,
-            op: Fold(expr, op),
-        }
+        self.into_composite()
+            .eval()
+            .eval_n(size, |x, y| op(x, y).into())
     }
 
-    fn sum_n(self, size: usize) -> Composite<Sum<Self::Op>> {
-        let (dice, op) = self.into_composite().explode(size);
-        Composite { dice, op: Sum(op) }
+    fn sum_n(self, size: usize) -> Die {
+        self.into_composite().eval().eval_n(size, |x, y| x + y)
     }
 
-    fn product_n(self, size: usize) -> Composite<Product<Self::Op>> {
-        let (dice, op) = self.into_composite().explode(size);
-        Composite {
-            dice,
-            op: Product(op),
-        }
+    fn product_n(self, size: usize) -> Die {
+        self.into_composite().eval().eval_n(size, |x, y| x * y)
     }
 
-    fn min_of_n(self, size: usize) -> Composite<MinOf<Self::Op>> {
-        let (dice, op) = self.into_composite().explode(size);
-        Composite {
-            dice,
-            op: MinOf(op),
-        }
+    fn min_of_n(self, size: usize) -> Die {
+        self.into_composite().eval().eval_n(size, Ord::min)
     }
 
-    fn max_of_n(self, size: usize) -> Composite<MaxOf<Self::Op>> {
-        let (dice, op) = self.into_composite().explode(size);
-        Composite {
-            dice,
-            op: MaxOf(op),
-        }
+    fn max_of_n(self, size: usize) -> Die {
+        self.into_composite().eval().eval_n(size, Ord::max)
     }
 
-    fn any_n<F>(self, size: usize, pred: F) -> Composite<Any<Self::Op, F>>
+    fn any_n<F>(self, size: usize, pred: F) -> Die
     where
-        F: Fn(Key) -> bool + Clone + Send,
+        F: Fn(Key) -> bool,
     {
-        let (dice, op) = self.into_composite().explode(size);
-        Composite {
-            dice,
-            op: Any(op, pred),
-        }
+        self.into_composite()
+            .eval()
+            .eval_n(size, |x, y| Key::from(pred(x) || pred(y)))
     }
 
-    fn all_n<F>(self, size: usize, pred: F) -> Composite<All<Self::Op, F>>
+    fn all_n<F>(self, size: usize, pred: F) -> Die
     where
-        F: Fn(Key) -> bool + Clone + Send,
+        F: Fn(Key) -> bool,
     {
-        let (dice, op) = self.into_composite().explode(size);
-        Composite {
-            dice,
-            op: All(op, pred),
-        }
+        self.into_composite()
+            .eval()
+            .eval_n(size, |x, y| Key::from(pred(x) && pred(y)))
     }
 
     #[allow(clippy::type_complexity)]
@@ -563,6 +540,22 @@ where
     fn into_composite(self) -> Composite<Self::Op> {
         self
     }
+
+    fn eval_with_strategy(self, strategy: EvalStrategy) -> OverflowResult<Die> {
+        self.eval_with_strategy(strategy)
+    }
+
+    fn eval(self) -> Die {
+        self.eval()
+    }
+
+    fn eval_exact(self) -> OverflowResult<Die> {
+        self.eval_exact()
+    }
+
+    fn eval_approx(self, approx: Approx) -> Die {
+        self.eval_approx(approx)
+    }
 }
 
 impl Expr for Die {
@@ -573,6 +566,10 @@ impl Expr for Die {
             dice: vec![self],
             op: Id(0),
         }
+    }
+
+    fn eval_with_strategy(self, _strategy: EvalStrategy) -> OverflowResult<Die> {
+        Ok(self)
     }
 
     fn eval(self) -> Die {

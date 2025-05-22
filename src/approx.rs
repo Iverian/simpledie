@@ -78,7 +78,10 @@ where
             }
         }
 
-        Die::from_map(Value::from(denom.unwrap_or(self.max_sample_size)), outcomes)
+        let denom = Value::from(denom.unwrap_or(self.max_sample_size));
+        println!("approx iterations: {denom}");
+
+        Die::from_map(denom, outcomes)
     }
 
     #[must_use]

@@ -103,7 +103,7 @@ where
 }
 
 impl Mul<Die> for usize {
-    type Output = Composite<super::Sum<super::Id>>;
+    type Output = Die;
 
     fn mul(self, rhs: Die) -> Self::Output {
         rhs.sum_n(self)
@@ -114,7 +114,7 @@ impl<T> Mul<Composite<T>> for usize
 where
     T: Operation + Clone + Debug + Send + 'static,
 {
-    type Output = Composite<super::Sum<T>>;
+    type Output = Die;
 
     fn mul(self, rhs: Composite<T>) -> Self::Output {
         rhs.sum_n(self)
@@ -122,7 +122,7 @@ where
 }
 
 impl Div<Die> for usize {
-    type Output = Composite<super::MaxOf<super::Id>>;
+    type Output = Die;
 
     fn div(self, rhs: Die) -> Self::Output {
         rhs.max_of_n(self)
@@ -133,7 +133,7 @@ impl<T> Div<Composite<T>> for usize
 where
     T: Operation + Clone + Debug + Send + 'static,
 {
-    type Output = Composite<super::MaxOf<T>>;
+    type Output = Die;
 
     fn div(self, rhs: Composite<T>) -> Self::Output {
         rhs.max_of_n(self)

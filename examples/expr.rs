@@ -3,7 +3,8 @@ use std::iter::{once, repeat_n};
 use simpledie::prelude::*;
 
 fn main() {
-    todo!()
+    let d = d10().eval_n(10, |x, y| x + y);
+    println!("{d:?}");
 }
 
 fn atk(die: impl Expr, atk_bonus: i32, armor_class: i32) -> impl Expr {
