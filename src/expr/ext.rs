@@ -7,22 +7,15 @@ use super::{
     FoldThree, FoldTwo, Id, Map, Max, MaxOf, Min, MinOf, Mul, MulKey, Neg, Not, Operation, Product,
     Sum,
 };
-use crate::approx::Approx;
-use crate::util::{DieList, Key, OverflowResult};
-use crate::{Die, EvalStrategy};
+use crate::util::{DieList, Key};
+use crate::Die;
 
 pub trait Expr: Clone + Debug + Send {
     type Op: Operation + Clone + Debug + Send + 'static;
 
     fn into_composite(self) -> Composite<Self::Op>;
 
-    fn eval_with_strategy(self, strategy: EvalStrategy) -> OverflowResult<Die>;
-
     fn eval(self) -> Die;
-
-    fn eval_exact(self) -> OverflowResult<Die>;
-
-    fn eval_approx(self, approx: Approx) -> Die;
 
     fn map<F, O>(self, op: F) -> Composite<Map<Self::Op, F>>
     where
@@ -541,20 +534,8 @@ where
         self
     }
 
-    fn eval_with_strategy(self, strategy: EvalStrategy) -> OverflowResult<Die> {
-        self.eval_with_strategy(strategy)
-    }
-
     fn eval(self) -> Die {
         self.eval()
-    }
-
-    fn eval_exact(self) -> OverflowResult<Die> {
-        self.eval_exact()
-    }
-
-    fn eval_approx(self, approx: Approx) -> Die {
-        self.eval_approx(approx)
     }
 }
 
@@ -568,19 +549,7 @@ impl Expr for Die {
         }
     }
 
-    fn eval_with_strategy(self, _strategy: EvalStrategy) -> OverflowResult<Die> {
-        Ok(self)
-    }
-
     fn eval(self) -> Die {
-        self
-    }
-
-    fn eval_exact(self) -> OverflowResult<Die> {
-        Ok(self)
-    }
-
-    fn eval_approx(self, _approx: Approx) -> Die {
         self
     }
 }
