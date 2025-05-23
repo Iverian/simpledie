@@ -4,12 +4,15 @@
 pub mod approx;
 pub mod defs;
 pub mod die;
-pub mod expr;
+mod expr;
 pub mod prelude;
 mod util;
 
 use std::fmt::Debug;
 
+pub use expr::composite::Composite;
+pub use expr::ext::Expr;
+pub use expr::Operation;
 use util::{DefaultKey, Value};
 
 pub trait Key: Copy + Ord + Debug {}

@@ -33,7 +33,6 @@ where
         let mut keys = Vec::with_capacity(values.len());
         let mut outcomes = Vec::with_capacity(values.len());
         for (k, v) in values {
-            let k = k.into();
             let v = v.into();
             if v == 0 {
                 continue;
@@ -186,14 +185,14 @@ where
     }
 
     #[must_use]
-    pub fn map<O, F>(self, op: F) -> Die<O>
+    pub fn key_map<O, F>(self, op: F) -> Die<O>
     where
         O: Key,
         F: Fn(T) -> O,
     {
         let mut outcomes = die_map();
         for (k, c) in self.keys.into_iter().zip(self.outcomes) {
-            match outcomes.entry(op(k).into()) {
+            match outcomes.entry(op(k)) {
                 Entry::Vacant(e) => {
                     e.insert(c);
                 }

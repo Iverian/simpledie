@@ -2,7 +2,7 @@ use bon::Builder;
 use rand::rngs::ThreadRng;
 use rand::{thread_rng, RngCore};
 
-use crate::util::{die_map, DefaultKey, Entry, APPROX_SAMPLE_SIZE};
+use crate::util::{die_map, Entry, APPROX_SAMPLE_SIZE};
 use crate::{Die, Key};
 
 #[derive(Debug, Builder)]
