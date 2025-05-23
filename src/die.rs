@@ -1,13 +1,13 @@
 use core::f64;
 use std::borrow::Borrow;
 use std::collections::HashMap;
-use std::iter::{FusedIterator, IntoIterator, Zip};
+use std::iter::{IntoIterator, Zip};
 use std::num::NonZeroU16;
-use std::vec;
+use std::{slice, vec};
 
 use itertools::Itertools;
 use num::rational::Ratio;
-use num::ToPrimitive;
+use num::{Integer, ToPrimitive};
 use rand::{Rng, RngCore};
 
 use crate::approx::Approx;
@@ -15,7 +15,10 @@ use crate::util::{
     die_map, BigInt, BigRatio, DieMap, Entry, Key, OverflowError, OverflowResult, Value,
     DIRECT_MAX_ITERATIONS,
 };
-use crate::{Die, EvalStrategy, Iter};
+use crate::{Die, EvalStrategy};
+
+pub type Iter<'a> = Zip<slice::Iter<'a, Key>, slice::Iter<'a, Value>>;
+pub type IntoIter = Zip<vec::IntoIter<Key>, vec::IntoIter<Value>>;
 
 impl Die {
     #[must_use]
@@ -87,7 +90,7 @@ impl Die {
     {
         let v = rng.gen_range(0..self.denom);
         let mut pos = 0;
-        for (k, c) in self {
+        for (&k, c) in self {
             pos += c;
             if v < pos {
                 return k;
@@ -96,12 +99,8 @@ impl Die {
         unreachable!()
     }
 
-    #[must_use]
     pub fn iter(&self) -> Iter<'_> {
-        Iter {
-            die: self,
-            index: 0,
-        }
+        self.keys.iter().zip(self.outcomes.iter())
     }
 
     #[must_use]
@@ -124,7 +123,7 @@ impl Die {
         self.iter()
             .max_set_by(|(_, x), (_, y)| x.cmp(y))
             .into_iter()
-            .map(|(k, _)| k)
+            .map(|(&k, _)| k)
             .collect()
     }
 
@@ -132,7 +131,7 @@ impl Die {
     pub fn probabilities(&self) -> Vec<(Key, BigRatio)> {
         let d = BigInt::from(self.denom);
         self.iter()
-            .map(|(k, c)| (k, Ratio::new(c.into(), d.clone())))
+            .map(|(&k, &c)| (k, Ratio::new(c.into(), d.clone())))
             .collect()
     }
 
@@ -140,7 +139,7 @@ impl Die {
     pub fn probabilities_f64(&self) -> Vec<(Key, f64)> {
         let d = BigInt::from(self.denom);
         self.iter()
-            .map(|(k, c)| {
+            .map(|(&k, &c)| {
                 (
                     k,
                     Ratio::new(c.into(), d.clone()).to_f64().unwrap_or(f64::NAN),
@@ -153,7 +152,7 @@ impl Die {
     pub fn mean(&self) -> BigRatio {
         let c = self
             .iter()
-            .map(|(k, c)| Self::map_mean(k, c))
+            .map(|(&k, &c)| Self::map_mean(k, c))
             .reduce(|acc, x| acc + x)
             .unwrap();
         BigRatio::new(c, self.denom.into())
@@ -169,7 +168,7 @@ impl Die {
         let m = self.mean();
         let c = self
             .iter()
-            .map(|(k, c)| Self::map_variance(&m, k, c))
+            .map(|(&k, &c)| Self::map_variance(&m, k, c))
             .reduce(|acc, x| acc + x)
             .unwrap();
         c / BigInt::from(self.denom)
@@ -332,7 +331,7 @@ impl Die {
 
         for p in dice
             .iter()
-            .map(|x| x.borrow().iter())
+            .map(|x| x.borrow().iter().map(|(&k, &c)| (k, c)))
             .multi_cartesian_product()
         {
             key.clear();
@@ -354,12 +353,18 @@ impl Die {
     }
 
     #[must_use]
-    pub(crate) fn from_map(denom: Value, value: DieMap) -> Self {
+    pub(crate) fn from_map(mut denom: Value, value: DieMap) -> Self {
         let mut keys = Vec::with_capacity(value.len());
         let mut outcomes = Vec::with_capacity(value.len());
+        let mut gcd = denom;
         for (k, v) in value {
+            gcd = gcd.gcd(&v);
             keys.push(k);
             outcomes.push(v);
+        }
+        if gcd != 1 {
+            outcomes.iter_mut().for_each(|x| *x /= gcd);
+            denom /= gcd;
         }
         Self {
             denom,
@@ -391,38 +396,18 @@ impl Die {
 
 impl IntoIterator for Die {
     type Item = (Key, Value);
-
-    type IntoIter = Zip<vec::IntoIter<Key>, vec::IntoIter<Value>>;
+    type IntoIter = IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        let keys = self.keys;
-        let outcomes = self.outcomes;
-        keys.into_iter().zip(outcomes)
+        self.keys.into_iter().zip(self.outcomes)
     }
 }
 
 impl<'a> IntoIterator for &'a Die {
-    type Item = (Key, Value);
-
+    type Item = (&'a Key, &'a Value);
     type IntoIter = Iter<'a>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
 }
-
-impl Iterator for Iter<'_> {
-    type Item = (Key, Value);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index == self.die.keys.len() {
-            None
-        } else {
-            let item = (self.die.keys[self.index], self.die.outcomes[self.index]);
-            self.index += 1;
-            Some(item)
-        }
-    }
-}
-
-impl FusedIterator for Iter<'_> {}

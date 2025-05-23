@@ -201,33 +201,30 @@ pub trait Expr: Clone + Debug + Send {
         F: Fn(Key, Key) -> O,
         O: Into<Key>,
     {
-        self.into_composite()
-            .eval()
-            .eval_n(size, |x, y| op(x, y).into())
+        self.eval().eval_n(size, |x, y| op(x, y).into())
     }
 
     fn sum_n(self, size: usize) -> Die {
-        self.into_composite().eval().eval_n(size, |x, y| x + y)
+        self.eval().eval_n(size, |x, y| x + y)
     }
 
     fn product_n(self, size: usize) -> Die {
-        self.into_composite().eval().eval_n(size, |x, y| x * y)
+        self.eval().eval_n(size, |x, y| x * y)
     }
 
     fn min_of_n(self, size: usize) -> Die {
-        self.into_composite().eval().eval_n(size, Ord::min)
+        self.eval().eval_n(size, Ord::min)
     }
 
     fn max_of_n(self, size: usize) -> Die {
-        self.into_composite().eval().eval_n(size, Ord::max)
+        self.eval().eval_n(size, Ord::max)
     }
 
     fn any_n<F>(self, size: usize, pred: F) -> Die
     where
         F: Fn(Key) -> bool,
     {
-        self.into_composite()
-            .eval()
+        self.eval()
             .eval_n(size, |x, y| Key::from(pred(x) || pred(y)))
     }
 
@@ -235,8 +232,7 @@ pub trait Expr: Clone + Debug + Send {
     where
         F: Fn(Key) -> bool,
     {
-        self.into_composite()
-            .eval()
+        self.eval()
             .eval_n(size, |x, y| Key::from(pred(x) && pred(y)))
     }
 

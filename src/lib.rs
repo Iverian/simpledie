@@ -23,9 +23,3 @@ pub enum EvalStrategy {
     Approximate,
     Exact,
 }
-
-#[derive(Debug, Clone)]
-pub struct Iter<'a> {
-    die: &'a Die,
-    index: usize,
-}
