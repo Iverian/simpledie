@@ -10,8 +10,8 @@ use super::{
 use crate::util::{DieList, Key};
 use crate::Die;
 
-pub trait Expr: Clone + Debug + Send {
-    type Op: Operation + Clone + Debug + Send + 'static;
+pub trait Expr: Clone + Debug {
+    type Op: Operation + Clone + 'static;
 
     fn into_composite(self) -> Composite<Self::Op>;
 
@@ -19,7 +19,7 @@ pub trait Expr: Clone + Debug + Send {
 
     fn map<F, O>(self, op: F) -> Composite<Map<Self::Op, F>>
     where
-        F: Fn(Key) -> O + Clone + Send,
+        F: Fn(Key) -> O + Clone,
         O: Into<Key>,
     {
         let me = self.into_composite();
@@ -244,7 +244,7 @@ pub trait Expr: Clone + Debug + Send {
         rhs: R,
     ) -> Composite<Branch<F, Self::Op, L::Op, R::Op>>
     where
-        F: Fn(Key) -> bool + Clone + Send,
+        F: Fn(Key) -> bool + Clone,
         L: Expr,
         R: Expr,
     {
@@ -288,7 +288,7 @@ impl Die {
     where
         T1: Expr,
         T2: Expr,
-        F: Fn(Key, Key) -> O + Clone + Send,
+        F: Fn(Key, Key) -> O + Clone,
         O: Into<Key>,
     {
         let e1 = e1.into_composite();
@@ -315,7 +315,7 @@ impl Die {
         T1: Expr,
         T2: Expr,
         T3: Expr,
-        F: Fn(Key, Key, Key) -> O + Clone + Send,
+        F: Fn(Key, Key, Key) -> O + Clone,
         O: Into<Key>,
     {
         let e1 = e1.into_composite();
@@ -348,7 +348,7 @@ impl Die {
         T2: Expr,
         T3: Expr,
         T4: Expr,
-        F: Fn(Key, Key, Key, Key) -> O + Clone + Send,
+        F: Fn(Key, Key, Key, Key) -> O + Clone,
         O: Into<Key>,
     {
         let e1 = e1.into_composite();
@@ -386,7 +386,7 @@ impl Die {
         T3: Expr,
         T4: Expr,
         T5: Expr,
-        F: Fn(Key, Key, Key, Key, Key) -> O + Clone + Send,
+        F: Fn(Key, Key, Key, Key, Key) -> O + Clone,
         O: Into<Key>,
     {
         let e1 = e1.into_composite();
@@ -415,7 +415,7 @@ impl Die {
     #[must_use]
     pub fn fold<F, I, E>(iter: I, op: F) -> Composite<Fold<E::Op, F>>
     where
-        F: Fn(&[Key]) -> Key + Clone + Send,
+        F: Fn(&[Key]) -> Key + Clone,
         I: IntoIterator<Item = E>,
         E: Expr,
     {
@@ -478,7 +478,7 @@ impl Die {
     where
         I: IntoIterator<Item = E>,
         E: Expr,
-        F: Fn(Key) -> bool + Clone + Send,
+        F: Fn(Key) -> bool + Clone,
     {
         let (dice, items) = Self::parts(iter);
         Composite {
@@ -491,7 +491,7 @@ impl Die {
     where
         I: IntoIterator<Item = E>,
         E: Expr,
-        F: Fn(Key) -> bool + Clone + Send,
+        F: Fn(Key) -> bool + Clone,
     {
         let (dice, items) = Self::parts(iter);
         Composite {
@@ -522,7 +522,7 @@ impl Die {
 
 impl<T> Expr for Composite<T>
 where
-    T: Operation + Clone + Debug + Send + 'static,
+    T: Operation + Clone + 'static,
 {
     type Op = T;
 
@@ -605,7 +605,7 @@ impl DynFoldBuilder {
     #[must_use]
     pub fn build<F>(self, op: F) -> Composite<Fold<Boxed, F>>
     where
-        F: Fn(&[Key]) -> Key + Clone + Send,
+        F: Fn(&[Key]) -> Key + Clone,
     {
         Composite {
             dice: self.0,

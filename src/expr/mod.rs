@@ -15,7 +15,7 @@ pub trait Operation: Debug + DynClone {
 
     fn boxed(self) -> Boxed
     where
-        Self: Sized + Send + 'static,
+        Self: Sized + 'static,
     {
         Boxed(Box::new(self))
     }
@@ -102,7 +102,7 @@ pub struct All<T, F>(Vec<T>, F);
 pub struct Branch<F, C, L, R>(F, C, L, R);
 
 #[derive(Clone, Debug)]
-pub struct Boxed(Box<dyn Operation + Send + 'static>);
+pub struct Boxed(Box<dyn Operation + 'static>);
 
 impl Operation for Id {
     fn call(&self, values: &[Key]) -> Key {

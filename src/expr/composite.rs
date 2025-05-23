@@ -7,7 +7,7 @@ use crate::Die;
 #[derive(Clone, Debug)]
 pub struct Composite<T>
 where
-    T: Operation + Clone + Debug + Send + 'static,
+    T: Operation + Clone + 'static,
 {
     pub dice: DieList,
     pub op: T,
@@ -15,7 +15,7 @@ where
 
 impl<T> Composite<T>
 where
-    T: Operation + Clone + Debug + Send + 'static,
+    T: Operation + Clone + 'static,
 {
     pub fn eval(self) -> Die {
         Die::eval(self.dice, move |x| self.op.call(x))
