@@ -4,7 +4,7 @@ use std::ops::{Add, Div, Mul, Neg, Sub};
 use super::composite::Composite;
 use super::ext::Expr;
 use super::Operation;
-use crate::util::Key;
+use crate::util::DefaultKey;
 use crate::Die;
 
 impl Neg for Die {
@@ -26,15 +26,15 @@ where
     }
 }
 
-impl Add<Key> for Die {
+impl Add<DefaultKey> for Die {
     type Output = Composite<super::AddKey<super::Id>>;
 
-    fn add(self, rhs: Key) -> Self::Output {
+    fn add(self, rhs: DefaultKey) -> Self::Output {
         self.kadd(rhs)
     }
 }
 
-impl Add<Die> for Key {
+impl Add<Die> for DefaultKey {
     type Output = Composite<super::AddKey<super::Id>>;
 
     fn add(self, rhs: Die) -> Self::Output {
@@ -42,18 +42,18 @@ impl Add<Die> for Key {
     }
 }
 
-impl<T> Add<Key> for Composite<T>
+impl<T> Add<DefaultKey> for Composite<T>
 where
     T: Operation + Clone + Debug + Send + 'static,
 {
     type Output = Composite<super::AddKey<T>>;
 
-    fn add(self, rhs: Key) -> Self::Output {
+    fn add(self, rhs: DefaultKey) -> Self::Output {
         self.kadd(rhs)
     }
 }
 
-impl<T> Add<Composite<T>> for Key
+impl<T> Add<Composite<T>> for DefaultKey
 where
     T: Operation + Clone + Debug + Send + 'static,
 {
@@ -64,15 +64,15 @@ where
     }
 }
 
-impl Sub<Key> for Die {
+impl Sub<DefaultKey> for Die {
     type Output = Composite<super::AddKey<super::Id>>;
 
-    fn sub(self, rhs: Key) -> Self::Output {
+    fn sub(self, rhs: DefaultKey) -> Self::Output {
         self.ksub(rhs)
     }
 }
 
-impl Sub<Die> for Key {
+impl Sub<Die> for DefaultKey {
     type Output = Composite<super::AddKey<super::Neg<super::Id>>>;
 
     fn sub(self, rhs: Die) -> Self::Output {
@@ -80,18 +80,18 @@ impl Sub<Die> for Key {
     }
 }
 
-impl<T> Sub<Key> for Composite<T>
+impl<T> Sub<DefaultKey> for Composite<T>
 where
     T: Operation + Clone + Debug + Send + 'static,
 {
     type Output = Composite<super::AddKey<T>>;
 
-    fn sub(self, rhs: Key) -> Self::Output {
+    fn sub(self, rhs: DefaultKey) -> Self::Output {
         self.ksub(rhs)
     }
 }
 
-impl<T> Sub<Composite<T>> for Key
+impl<T> Sub<Composite<T>> for DefaultKey
 where
     T: Operation + Clone + Debug + Send + 'static,
 {

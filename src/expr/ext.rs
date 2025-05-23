@@ -7,7 +7,7 @@ use super::{
     FoldThree, FoldTwo, Id, Map, Max, MaxOf, Min, MinOf, Mul, MulKey, Neg, Not, Operation, Product,
     Sum,
 };
-use crate::util::{DieList, Key};
+use crate::util::{DieList, DefaultKey};
 use crate::Die;
 
 pub trait Expr: Clone + Debug {
@@ -19,8 +19,8 @@ pub trait Expr: Clone + Debug {
 
     fn map<F, O>(self, op: F) -> Composite<Map<Self::Op, F>>
     where
-        F: Fn(Key) -> O + Clone,
-        O: Into<Key>,
+        F: Fn(DefaultKey) -> O + Clone,
+        O: Into<DefaultKey>,
     {
         let me = self.into_composite();
         Composite {
@@ -37,7 +37,7 @@ pub trait Expr: Clone + Debug {
         }
     }
 
-    fn kadd(self, rhs: Key) -> Composite<AddKey<Self::Op>> {
+    fn kadd(self, rhs: DefaultKey) -> Composite<AddKey<Self::Op>> {
         let me = self.into_composite();
         Composite {
             dice: me.dice,
@@ -45,7 +45,7 @@ pub trait Expr: Clone + Debug {
         }
     }
 
-    fn ksub(self, rhs: Key) -> Composite<AddKey<Self::Op>> {
+    fn ksub(self, rhs: DefaultKey) -> Composite<AddKey<Self::Op>> {
         let me = self.into_composite();
         Composite {
             dice: me.dice,
@@ -53,7 +53,7 @@ pub trait Expr: Clone + Debug {
         }
     }
 
-    fn kmul(self, rhs: Key) -> Composite<MulKey<Self::Op>> {
+    fn kmul(self, rhs: DefaultKey) -> Composite<MulKey<Self::Op>> {
         let me = self.into_composite();
         Composite {
             dice: me.dice,
@@ -61,7 +61,7 @@ pub trait Expr: Clone + Debug {
         }
     }
 
-    fn kdiv(self, rhs: Key) -> Composite<DivKey<Self::Op>> {
+    fn kdiv(self, rhs: DefaultKey) -> Composite<DivKey<Self::Op>> {
         let me = self.into_composite();
         Composite {
             dice: me.dice,
@@ -77,7 +77,7 @@ pub trait Expr: Clone + Debug {
         }
     }
 
-    fn contains<const N: usize>(self, rhs: [Key; N]) -> Composite<Eq<Self::Op, N>> {
+    fn contains<const N: usize>(self, rhs: [DefaultKey; N]) -> Composite<Eq<Self::Op, N>> {
         let me = self.into_composite();
         Composite {
             dice: me.dice,
@@ -85,15 +85,15 @@ pub trait Expr: Clone + Debug {
         }
     }
 
-    fn eq(self, rhs: Key) -> Composite<Eq<Self::Op>> {
+    fn eq(self, rhs: DefaultKey) -> Composite<Eq<Self::Op>> {
         self.contains([rhs])
     }
 
-    fn neq(self, rhs: Key) -> Composite<Not<Eq<Self::Op>>> {
+    fn neq(self, rhs: DefaultKey) -> Composite<Not<Eq<Self::Op>>> {
         self.eq(rhs).not()
     }
 
-    fn cmp(self, rhs: Key) -> Composite<Cmp<Self::Op>> {
+    fn cmp(self, rhs: DefaultKey) -> Composite<Cmp<Self::Op>> {
         let me = self.into_composite();
         Composite {
             dice: me.dice,
@@ -101,22 +101,22 @@ pub trait Expr: Clone + Debug {
         }
     }
 
-    fn lt(self, rhs: Key) -> Composite<Eq<Cmp<Self::Op>>> {
-        self.cmp(rhs).eq(Ordering::Less as Key)
+    fn lt(self, rhs: DefaultKey) -> Composite<Eq<Cmp<Self::Op>>> {
+        self.cmp(rhs).eq(Ordering::Less as DefaultKey)
     }
 
-    fn le(self, rhs: Key) -> Composite<Eq<Cmp<Self::Op>, 2>> {
+    fn le(self, rhs: DefaultKey) -> Composite<Eq<Cmp<Self::Op>, 2>> {
         self.cmp(rhs)
-            .contains([Ordering::Less as Key, Ordering::Equal as Key])
+            .contains([Ordering::Less as DefaultKey, Ordering::Equal as DefaultKey])
     }
 
-    fn gt(self, rhs: Key) -> Composite<Eq<Cmp<Self::Op>>> {
-        self.cmp(rhs).eq(Ordering::Greater as Key)
+    fn gt(self, rhs: DefaultKey) -> Composite<Eq<Cmp<Self::Op>>> {
+        self.cmp(rhs).eq(Ordering::Greater as DefaultKey)
     }
 
-    fn ge(self, rhs: Key) -> Composite<Eq<Cmp<Self::Op>, 2>> {
+    fn ge(self, rhs: DefaultKey) -> Composite<Eq<Cmp<Self::Op>, 2>> {
         self.cmp(rhs)
-            .contains([Ordering::Equal as Key, Ordering::Greater as Key])
+            .contains([Ordering::Equal as DefaultKey, Ordering::Greater as DefaultKey])
     }
 
     fn add<T>(self, rhs: T) -> Composite<Add<Self::Op, T::Op>>
@@ -198,8 +198,8 @@ pub trait Expr: Clone + Debug {
 
     fn fold_n<F, O>(self, size: usize, op: F) -> Die
     where
-        F: Fn(Key, Key) -> O,
-        O: Into<Key>,
+        F: Fn(DefaultKey, DefaultKey) -> O,
+        O: Into<DefaultKey>,
     {
         self.eval().eval_n(size, |x, y| op(x, y).into())
     }
@@ -222,18 +222,18 @@ pub trait Expr: Clone + Debug {
 
     fn any_n<F>(self, size: usize, pred: F) -> Die
     where
-        F: Fn(Key) -> bool,
+        F: Fn(DefaultKey) -> bool,
     {
         self.eval()
-            .eval_n(size, |x, y| Key::from(pred(x) || pred(y)))
+            .eval_n(size, |x, y| DefaultKey::from(pred(x) || pred(y)))
     }
 
     fn all_n<F>(self, size: usize, pred: F) -> Die
     where
-        F: Fn(Key) -> bool,
+        F: Fn(DefaultKey) -> bool,
     {
         self.eval()
-            .eval_n(size, |x, y| Key::from(pred(x) && pred(y)))
+            .eval_n(size, |x, y| DefaultKey::from(pred(x) && pred(y)))
     }
 
     #[allow(clippy::type_complexity)]
@@ -244,7 +244,7 @@ pub trait Expr: Clone + Debug {
         rhs: R,
     ) -> Composite<Branch<F, Self::Op, L::Op, R::Op>>
     where
-        F: Fn(Key) -> bool + Clone,
+        F: Fn(DefaultKey) -> bool + Clone,
         L: Expr,
         R: Expr,
     {
@@ -288,8 +288,8 @@ impl Die {
     where
         T1: Expr,
         T2: Expr,
-        F: Fn(Key, Key) -> O + Clone,
-        O: Into<Key>,
+        F: Fn(DefaultKey, DefaultKey) -> O + Clone,
+        O: Into<DefaultKey>,
     {
         let e1 = e1.into_composite();
         let mut e2 = e2.into_composite();
@@ -315,8 +315,8 @@ impl Die {
         T1: Expr,
         T2: Expr,
         T3: Expr,
-        F: Fn(Key, Key, Key) -> O + Clone,
-        O: Into<Key>,
+        F: Fn(DefaultKey, DefaultKey, DefaultKey) -> O + Clone,
+        O: Into<DefaultKey>,
     {
         let e1 = e1.into_composite();
         let mut e2 = e2.into_composite();
@@ -348,8 +348,8 @@ impl Die {
         T2: Expr,
         T3: Expr,
         T4: Expr,
-        F: Fn(Key, Key, Key, Key) -> O + Clone,
-        O: Into<Key>,
+        F: Fn(DefaultKey, DefaultKey, DefaultKey, DefaultKey) -> O + Clone,
+        O: Into<DefaultKey>,
     {
         let e1 = e1.into_composite();
         let mut e2 = e2.into_composite();
@@ -386,8 +386,8 @@ impl Die {
         T3: Expr,
         T4: Expr,
         T5: Expr,
-        F: Fn(Key, Key, Key, Key, Key) -> O + Clone,
-        O: Into<Key>,
+        F: Fn(DefaultKey, DefaultKey, DefaultKey, DefaultKey, DefaultKey) -> O + Clone,
+        O: Into<DefaultKey>,
     {
         let e1 = e1.into_composite();
         let mut e2 = e2.into_composite();
@@ -415,7 +415,7 @@ impl Die {
     #[must_use]
     pub fn fold<F, I, E>(iter: I, op: F) -> Composite<Fold<E::Op, F>>
     where
-        F: Fn(&[Key]) -> Key + Clone,
+        F: Fn(&[DefaultKey]) -> DefaultKey + Clone,
         I: IntoIterator<Item = E>,
         E: Expr,
     {
@@ -478,7 +478,7 @@ impl Die {
     where
         I: IntoIterator<Item = E>,
         E: Expr,
-        F: Fn(Key) -> bool + Clone,
+        F: Fn(DefaultKey) -> bool + Clone,
     {
         let (dice, items) = Self::parts(iter);
         Composite {
@@ -491,7 +491,7 @@ impl Die {
     where
         I: IntoIterator<Item = E>,
         E: Expr,
-        F: Fn(Key) -> bool + Clone,
+        F: Fn(DefaultKey) -> bool + Clone,
     {
         let (dice, items) = Self::parts(iter);
         Composite {
@@ -605,7 +605,7 @@ impl DynFoldBuilder {
     #[must_use]
     pub fn build<F>(self, op: F) -> Composite<Fold<Boxed, F>>
     where
-        F: Fn(&[Key]) -> Key + Clone,
+        F: Fn(&[DefaultKey]) -> DefaultKey + Clone,
     {
         Composite {
             dice: self.0,

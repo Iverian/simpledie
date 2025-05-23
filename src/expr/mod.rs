@@ -6,10 +6,10 @@ use std::fmt::Debug;
 
 use dyn_clone::DynClone;
 
-use crate::util::Key;
+use crate::util::DefaultKey;
 
 pub trait Operation: Debug + DynClone {
-    fn call(&self, values: &[Key]) -> Key;
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey;
 
     fn shift_indices(&mut self, value: usize);
 
@@ -33,22 +33,22 @@ pub struct Map<T, F>(T, F);
 pub struct Neg<T>(T);
 
 #[derive(Clone, Copy, Debug)]
-pub struct AddKey<T>(T, Key);
+pub struct AddKey<T>(T, DefaultKey);
 
 #[derive(Clone, Copy, Debug)]
-pub struct MulKey<T>(T, Key);
+pub struct MulKey<T>(T, DefaultKey);
 
 #[derive(Clone, Copy, Debug)]
-pub struct DivKey<T>(T, Key);
+pub struct DivKey<T>(T, DefaultKey);
 
 #[derive(Clone, Copy, Debug)]
 pub struct Not<T>(T);
 
 #[derive(Clone, Debug)]
-pub struct Eq<T, const N: usize = 1>(T, [Key; N]);
+pub struct Eq<T, const N: usize = 1>(T, [DefaultKey; N]);
 
 #[derive(Clone, Copy, Debug)]
-pub struct Cmp<T>(T, Key);
+pub struct Cmp<T>(T, DefaultKey);
 
 #[derive(Clone, Copy, Debug)]
 pub struct Add<L, R>(L, R);
@@ -105,7 +105,7 @@ pub struct Branch<F, C, L, R>(F, C, L, R);
 pub struct Boxed(Box<dyn Operation + 'static>);
 
 impl Operation for Id {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         values[self.0]
     }
 
@@ -117,10 +117,10 @@ impl Operation for Id {
 impl<T, F, O> Operation for Map<T, F>
 where
     T: Operation + Clone,
-    F: Fn(Key) -> O + Clone,
-    O: Into<Key>,
+    F: Fn(DefaultKey) -> O + Clone,
+    O: Into<DefaultKey>,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         self.1(self.0.call(values)).into()
     }
 
@@ -142,7 +142,7 @@ impl<T> Operation for Neg<T>
 where
     T: Operation + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         -self.0.call(values)
     }
 
@@ -155,7 +155,7 @@ impl<T> Operation for AddKey<T>
 where
     T: Operation + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         self.0.call(values) + self.1
     }
 
@@ -168,7 +168,7 @@ impl<T> Operation for MulKey<T>
 where
     T: Operation + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         self.0.call(values) * self.1
     }
 
@@ -181,7 +181,7 @@ impl<T> Operation for DivKey<T>
 where
     T: Operation + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         self.0.call(values) / self.1
     }
 
@@ -194,8 +194,8 @@ impl<T> Operation for Not<T>
 where
     T: Operation + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
-        Key::from(match self.0.call(values) {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
+        DefaultKey::from(match self.0.call(values) {
             0 => 1,
             _ => 0,
         })
@@ -210,9 +210,9 @@ impl<T, const N: usize> Operation for Eq<T, N>
 where
     T: Operation + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         let v = self.0.call(values);
-        Key::from(self.1.contains(&v))
+        DefaultKey::from(self.1.contains(&v))
     }
 
     fn shift_indices(&mut self, value: usize) {
@@ -224,8 +224,8 @@ impl<T> Operation for Cmp<T>
 where
     T: Operation + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
-        self.0.call(values).cmp(&self.1) as Key
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
+        self.0.call(values).cmp(&self.1) as DefaultKey
     }
 
     fn shift_indices(&mut self, value: usize) {
@@ -238,7 +238,7 @@ where
     L: Operation + Clone,
     R: Operation + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         self.0.call(values) + self.1.call(values)
     }
 
@@ -253,7 +253,7 @@ where
     L: Operation + Clone,
     R: Operation + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         self.0.call(values) * self.1.call(values)
     }
 
@@ -268,7 +268,7 @@ where
     L: Operation + Clone,
     R: Operation + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         self.0.call(values) / self.1.call(values)
     }
 
@@ -283,7 +283,7 @@ where
     L: Operation + Clone,
     R: Operation + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         self.0.call(values).min(self.1.call(values))
     }
 
@@ -298,7 +298,7 @@ where
     L: Operation + Clone,
     R: Operation + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         self.0.call(values).max(self.1.call(values))
     }
 
@@ -311,10 +311,10 @@ where
 impl<T, F, O> Operation for Fold<T, F>
 where
     T: Operation + Clone,
-    F: Fn(&[Key]) -> O + Clone,
-    O: Into<Key>,
+    F: Fn(&[DefaultKey]) -> O + Clone,
+    O: Into<DefaultKey>,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         self.1(
             self.0
                 .iter()
@@ -345,10 +345,10 @@ impl<T1, T2, F, O> Operation for FoldTwo<T1, T2, F>
 where
     T1: Operation + Clone,
     T2: Operation + Clone,
-    F: Fn(Key, Key) -> O + Clone,
-    O: Into<Key>,
+    F: Fn(DefaultKey, DefaultKey) -> O + Clone,
+    O: Into<DefaultKey>,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         self.2(self.0.call(values), self.1.call(values)).into()
     }
 
@@ -376,10 +376,10 @@ where
     T1: Operation + Clone,
     T2: Operation + Clone,
     T3: Operation + Clone,
-    F: Fn(Key, Key, Key) -> O + Clone,
-    O: Into<Key>,
+    F: Fn(DefaultKey, DefaultKey, DefaultKey) -> O + Clone,
+    O: Into<DefaultKey>,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         self.3(
             self.0.call(values),
             self.1.call(values),
@@ -416,10 +416,10 @@ where
     T2: Operation + Clone,
     T3: Operation + Clone,
     T4: Operation + Clone,
-    F: Fn(Key, Key, Key, Key) -> O + Clone,
-    O: Into<Key>,
+    F: Fn(DefaultKey, DefaultKey, DefaultKey, DefaultKey) -> O + Clone,
+    O: Into<DefaultKey>,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         self.4(
             self.0.call(values),
             self.1.call(values),
@@ -461,10 +461,10 @@ where
     T3: Operation + Clone,
     T4: Operation + Clone,
     T5: Operation + Clone,
-    F: Fn(Key, Key, Key, Key, Key) -> O + Clone,
-    O: Into<Key>,
+    F: Fn(DefaultKey, DefaultKey, DefaultKey, DefaultKey, DefaultKey) -> O + Clone,
+    O: Into<DefaultKey>,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         self.5(
             self.0.call(values),
             self.1.call(values),
@@ -507,7 +507,7 @@ impl<T> Operation for Sum<T>
 where
     T: Operation + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         self.0.iter().map(|x| x.call(values)).sum()
     }
 
@@ -522,7 +522,7 @@ impl<T> Operation for Product<T>
 where
     T: Operation + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         self.0.iter().map(|x| x.call(values)).product()
     }
 
@@ -537,7 +537,7 @@ impl<T> Operation for MinOf<T>
 where
     T: Operation + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         self.0.iter().map(|x| x.call(values)).min().unwrap_or(0)
     }
 
@@ -552,7 +552,7 @@ impl<T> Operation for MaxOf<T>
 where
     T: Operation + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         self.0.iter().map(|x| x.call(values)).max().unwrap_or(0)
     }
 
@@ -566,9 +566,9 @@ where
 impl<T, F> Operation for Any<T, F>
 where
     T: Operation + Clone,
-    F: Fn(Key) -> bool + Clone,
+    F: Fn(DefaultKey) -> bool + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         self.0
             .iter()
             .map(|x| x.call(values))
@@ -595,9 +595,9 @@ where
 impl<T, F> Operation for All<T, F>
 where
     T: Operation + Clone,
-    F: Fn(Key) -> bool + Clone,
+    F: Fn(DefaultKey) -> bool + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         self.0
             .iter()
             .map(|x| x.call(values))
@@ -623,12 +623,12 @@ where
 
 impl<F, C, L, R> Operation for Branch<F, C, L, R>
 where
-    F: Fn(Key) -> bool + Clone,
+    F: Fn(DefaultKey) -> bool + Clone,
     C: Operation + Clone,
     L: Operation + Clone,
     R: Operation + Clone,
 {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         if self.0(self.1.call(values)) {
             self.2.call(values)
         } else {
@@ -659,7 +659,7 @@ where
 }
 
 impl Operation for Boxed {
-    fn call(&self, values: &[Key]) -> Key {
+    fn call(&self, values: &[DefaultKey]) -> DefaultKey {
         self.0.call(values)
     }
 

@@ -8,12 +8,19 @@ pub mod expr;
 pub mod prelude;
 mod util;
 
-use util::{Key, Value};
+use std::fmt::Debug;
+
+use util::{DefaultKey, Value};
+
+pub trait Key: Copy + Ord + Debug {}
 
 #[derive(Debug, Clone)]
-pub struct Die {
+pub struct Die<T = DefaultKey>
+where
+    T: Key,
+{
     denom: Value,
-    keys: Vec<Key>,
+    keys: Vec<T>,
     outcomes: Vec<Value>,
 }
 
@@ -23,3 +30,5 @@ pub enum EvalStrategy {
     Approximate,
     Exact,
 }
+
+impl<T> Key for T where T: Copy + Ord + Debug {}

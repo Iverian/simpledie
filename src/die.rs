@@ -12,19 +12,21 @@ use rand::{Rng, RngCore};
 
 use crate::approx::Approx;
 use crate::util::{
-    die_map, BigInt, BigRatio, DieMap, Entry, Key, OverflowError, OverflowResult, Value,
-    DIRECT_MAX_ITERATIONS,
+    die_map, BigInt, BigRatio, DefaultKey, DieMap, Entry, OverflowError, OverflowResult,
+    SignedValue, Value, DIRECT_MAX_ITERATIONS,
 };
-use crate::{Die, EvalStrategy};
+use crate::{Die, EvalStrategy, Key};
 
-pub type Iter<'a> = Zip<slice::Iter<'a, Key>, slice::Iter<'a, Value>>;
-pub type IntoIter = Zip<vec::IntoIter<Key>, vec::IntoIter<Value>>;
+pub type Iter<'a, T> = Zip<slice::Iter<'a, T>, slice::Iter<'a, Value>>;
+pub type IntoIter<T> = Zip<vec::IntoIter<T>, vec::IntoIter<Value>>;
 
-impl Die {
+impl<T> Die<T>
+where
+    T: Key,
+{
     #[must_use]
-    pub fn new<K, V>(values: Vec<(K, V)>) -> Self
+    pub fn new<V>(values: Vec<(T, V)>) -> Self
     where
-        K: Into<Key>,
         V: Into<Value>,
     {
         let mut denom = 0;
@@ -48,43 +50,27 @@ impl Die {
     }
 
     #[must_use]
-    pub fn uniform(size: NonZeroU16) -> Self {
-        let size = size.get();
-        Self {
-            denom: Value::from(size),
-            keys: (1..=Key::from(size)).collect(),
-            outcomes: vec![1; size as usize],
-        }
-    }
-
-    #[must_use]
-    pub fn uniform_values<K>(keys: Vec<K>) -> Self
-    where
-        K: Into<Key>,
-    {
+    pub fn uniform_values(keys: Vec<T>) -> Self {
         let c = 1;
         let n = keys.len();
         Self {
             denom: Value::try_from(n).unwrap(),
-            keys: keys.into_iter().map(Into::into).collect(),
+            keys,
             outcomes: vec![c; n],
         }
     }
 
     #[must_use]
-    pub fn single<K>(key: K) -> Self
-    where
-        K: Into<Key>,
-    {
+    pub fn single(key: T) -> Self {
         Self {
             denom: 1,
-            keys: vec![key.into()],
+            keys: vec![key],
             outcomes: vec![1],
         }
     }
 
     #[must_use]
-    pub fn sample<G>(&self, rng: &mut G) -> Key
+    pub fn sample<G>(&self, rng: &mut G) -> T
     where
         G: RngCore,
     {
@@ -99,12 +85,12 @@ impl Die {
         unreachable!()
     }
 
-    pub fn iter(&self) -> Iter<'_> {
+    pub fn iter(&self) -> Iter<'_, T> {
         self.keys.iter().zip(self.outcomes.iter())
     }
 
     #[must_use]
-    pub fn keys(&self) -> &[Key] {
+    pub fn keys(&self) -> &[T] {
         &self.keys
     }
 
@@ -119,7 +105,7 @@ impl Die {
     }
 
     #[must_use]
-    pub fn mode(&self) -> Vec<Key> {
+    pub fn mode(&self) -> Vec<T> {
         self.iter()
             .max_set_by(|(_, x), (_, y)| x.cmp(y))
             .into_iter()
@@ -128,7 +114,7 @@ impl Die {
     }
 
     #[must_use]
-    pub fn probabilities(&self) -> Vec<(Key, BigRatio)> {
+    pub fn probabilities(&self) -> Vec<(T, BigRatio)> {
         let d = BigInt::from(self.denom);
         self.iter()
             .map(|(&k, &c)| (k, Ratio::new(c.into(), d.clone())))
@@ -136,7 +122,7 @@ impl Die {
     }
 
     #[must_use]
-    pub fn probabilities_f64(&self) -> Vec<(Key, f64)> {
+    pub fn probabilities_f64(&self) -> Vec<(T, f64)> {
         let d = BigInt::from(self.denom);
         self.iter()
             .map(|(&k, &c)| {
@@ -149,58 +135,61 @@ impl Die {
     }
 
     #[must_use]
-    pub fn mean(&self) -> BigRatio {
+    pub fn mean(&self) -> BigRatio
+    where
+        T: Into<SignedValue>,
+    {
         let c = self
             .iter()
-            .map(|(&k, &c)| Self::map_mean(k, c))
+            .map(|(&k, &c)| map_mean(k.into(), c))
             .reduce(|acc, x| acc + x)
             .unwrap();
         BigRatio::new(c, self.denom.into())
     }
 
     #[must_use]
-    pub fn mean_f64(&self) -> f64 {
+    pub fn mean_f64(&self) -> f64
+    where
+        T: Into<SignedValue>,
+    {
         self.mean().to_f64().unwrap_or(f64::NAN)
     }
 
     #[must_use]
-    pub fn variance(&self) -> BigRatio {
+    pub fn variance(&self) -> BigRatio
+    where
+        T: Into<SignedValue>,
+    {
         let m = self.mean();
         let c = self
             .iter()
-            .map(|(&k, &c)| Self::map_variance(&m, k, c))
+            .map(|(&k, &c)| map_variance(&m, k.into(), c))
             .reduce(|acc, x| acc + x)
             .unwrap();
         c / BigInt::from(self.denom)
     }
 
     #[must_use]
-    pub fn variance_f64(&self) -> f64 {
+    pub fn variance_f64(&self) -> f64
+    where
+        T: Into<SignedValue>,
+    {
         self.variance().to_f64().unwrap_or(f64::NAN)
     }
 
     #[must_use]
-    pub fn stddev_f64(&self) -> f64 {
+    pub fn stddev_f64(&self) -> f64
+    where
+        T: Into<SignedValue>,
+    {
         self.variance_f64().sqrt()
     }
 
-    fn map_mean(k: Key, c: Value) -> BigInt {
-        let k = BigInt::from(k);
-        let c = BigInt::from(c);
-        k * c
-    }
-
-    fn map_variance(mean: &BigRatio, k: Key, c: Value) -> BigRatio {
-        let k = Ratio::new(BigInt::from(k), 1.into());
-        let c = BigInt::from(c);
-        (k - mean).pow(2) * c
-    }
-
     #[must_use]
-    pub fn map<F, O>(self, op: F) -> Die
+    pub fn map<O, F>(self, op: F) -> Die<O>
     where
-        F: Fn(Key) -> O,
-        O: Into<Key>,
+        O: Key,
+        F: Fn(T) -> O,
     {
         let mut outcomes = die_map();
         for (k, c) in self.keys.into_iter().zip(self.outcomes) {
@@ -218,9 +207,9 @@ impl Die {
     }
 
     #[must_use]
-    pub fn eval_n<F>(self, n: usize, op: F) -> Die
+    pub fn eval_n<F>(self, n: usize, op: F) -> Self
     where
-        F: Fn(Key, Key) -> Key,
+        F: Fn(T, T) -> T,
     {
         let mut out = HashMap::new();
         out.insert(1usize, self);
@@ -230,7 +219,7 @@ impl Die {
 
     fn eval_n_step<F>(n: usize, mut op: F, out: &mut HashMap<usize, Self>) -> F
     where
-        F: Fn(Key, Key) -> Key,
+        F: Fn(T, T) -> T,
     {
         match n {
             1 => {}
@@ -257,15 +246,16 @@ impl Die {
         op
     }
 
-    pub fn eval_with_strategy<L, D, F>(
+    pub fn eval_with_strategy<O, L, D, F>(
         strategy: EvalStrategy,
         dice: L,
         op: F,
-    ) -> OverflowResult<Die>
+    ) -> OverflowResult<Die<O>>
     where
+        O: Key,
         L: Borrow<[D]>,
         D: Borrow<Self>,
-        F: Fn(&[Key]) -> Key,
+        F: Fn(&[T]) -> O,
     {
         match strategy {
             EvalStrategy::Any => Ok(Self::eval(dice, op)),
@@ -275,11 +265,12 @@ impl Die {
     }
 
     #[must_use]
-    pub fn eval<L, D, F>(dice: L, op: F) -> Die
+    pub fn eval<O, L, D, F>(dice: L, op: F) -> Die<O>
     where
+        O: Key,
         L: Borrow<[D]>,
         D: Borrow<Self>,
-        F: Fn(&[Key]) -> Key,
+        F: Fn(&[T]) -> O,
     {
         match (Self::iterations_of(&dice), Self::denom_of(&dice)) {
             (_, None) => Self::eval_approx(Approx::default(), dice, op),
@@ -290,11 +281,12 @@ impl Die {
         }
     }
 
-    pub fn eval_exact<L, D, F>(dice: L, op: F) -> OverflowResult<Die>
+    pub fn eval_exact<O, L, D, F>(dice: L, op: F) -> OverflowResult<Die<O>>
     where
+        O: Key,
         L: Borrow<[D]>,
         D: Borrow<Self>,
-        F: Fn(&[Key]) -> Key,
+        F: Fn(&[T]) -> O,
     {
         Ok(Self::eval_exact_impl(
             Self::denom_of(&dice).ok_or(OverflowError)?,
@@ -304,11 +296,12 @@ impl Die {
     }
 
     #[must_use]
-    pub fn eval_approx<L, D, F, G>(mut approx: Approx<G>, dice: L, op: F) -> Die
+    pub fn eval_approx<O, L, D, F, G>(mut approx: Approx<G>, dice: L, op: F) -> Die<O>
     where
+        O: Key,
         L: Borrow<[D]>,
         D: Borrow<Self>,
-        F: Fn(&[Key]) -> Key,
+        F: Fn(&[T]) -> O,
         G: RngCore,
     {
         let dice = dice.borrow();
@@ -319,11 +312,12 @@ impl Die {
     }
 
     #[must_use]
-    fn eval_exact_impl<L, D, F>(denom: Value, dice: L, op: F) -> Die
+    fn eval_exact_impl<O, L, D, F>(denom: Value, dice: L, op: F) -> Die<O>
     where
+        O: Key,
         L: Borrow<[D]>,
         D: Borrow<Self>,
-        F: Fn(&[Key]) -> Key,
+        F: Fn(&[T]) -> O,
     {
         let dice = dice.borrow();
         let mut outcomes = die_map();
@@ -349,11 +343,11 @@ impl Die {
                 }
             }
         }
-        Die::from_map(denom, outcomes)
+        Die::<O>::from_map(denom, outcomes)
     }
 
     #[must_use]
-    pub(crate) fn from_map(mut denom: Value, value: DieMap) -> Self {
+    pub(crate) fn from_map(mut denom: Value, value: DieMap<T>) -> Self {
         let mut keys = Vec::with_capacity(value.len());
         let mut outcomes = Vec::with_capacity(value.len());
         let mut gcd = denom;
@@ -394,20 +388,50 @@ impl Die {
     }
 }
 
-impl IntoIterator for Die {
-    type Item = (Key, Value);
-    type IntoIter = IntoIter;
+impl Die {
+    #[must_use]
+    pub fn uniform(size: NonZeroU16) -> Self {
+        let size = size.get();
+        Self {
+            denom: Value::from(size),
+            keys: (1..=DefaultKey::from(size)).collect(),
+            outcomes: vec![1; size as usize],
+        }
+    }
+}
+
+impl<T> IntoIterator for Die<T>
+where
+    T: Key,
+{
+    type Item = (T, Value);
+    type IntoIter = IntoIter<T>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.keys.into_iter().zip(self.outcomes)
     }
 }
 
-impl<'a> IntoIterator for &'a Die {
-    type Item = (&'a Key, &'a Value);
-    type IntoIter = Iter<'a>;
+impl<'a, T> IntoIterator for &'a Die<T>
+where
+    T: Key,
+{
+    type Item = (&'a T, &'a Value);
+    type IntoIter = Iter<'a, T>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
+}
+
+fn map_mean(k: SignedValue, c: Value) -> BigInt {
+    let k = BigInt::from(k);
+    let c = BigInt::from(c);
+    k * c
+}
+
+fn map_variance(mean: &BigRatio, k: SignedValue, c: Value) -> BigRatio {
+    let k = Ratio::new(BigInt::from(k), 1.into());
+    let c = BigInt::from(c);
+    (k - mean).pow(2) * c
 }
