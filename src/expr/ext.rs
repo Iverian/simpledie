@@ -148,7 +148,7 @@ where
         Expr::not(Expr::eq(self, rhs))
     }
 
-    fn cmp(self, rhs: Key) -> Composite<Cmp<Self::Op>> {
+    fn cmp(self, rhs: Key) -> Composite<K, Cmp<Self::Op, <Self::Op as Operation<K>>::Output>> {
         let me = self.into_composite();
         Composite {
             dice: me.dice,

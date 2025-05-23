@@ -9,9 +9,9 @@ use crate::util::Key;
 
 pub trait Operation<K>: Debug + DynClone
 where
-    K: Clone + Copy + Ord,
+    K: Clone + Copy + Ord + Debug + Send,
 {
-    type Output: Clone + Copy + Ord;
+    type Output: Clone + Copy + Ord + Debug + Send;
 
     fn call(&self, values: &[K]) -> Self::Output;
 
@@ -121,7 +121,7 @@ where
 
 impl<K> Operation<K> for Id
 where
-    K: Clone + Copy + Ord,
+    K: Clone + Copy + Ord + Debug + Send,
 {
     type Output = K;
 
@@ -136,10 +136,10 @@ where
 
 impl<K, T, F, O> Operation<K> for Map<T, F>
 where
-    K: Clone + Copy + Ord,
+    K: Clone + Copy + Ord + Debug + Send,
+    O: Clone + Copy + Ord + Debug + Send,
     T: Operation<K> + Clone,
     F: Fn(T::Output) -> O + Clone,
-    O: Clone + Copy + Ord,
 {
     type Output = O;
 
@@ -163,10 +163,10 @@ where
 
 impl<K, T> Operation<K> for Neg<T>
 where
-    K: Clone + Copy + Ord,
+    K: Clone + Copy + Ord + Debug + Send,
     T: Operation<K> + Clone,
     T::Output: std::ops::Neg,
-    <T::Output as std::ops::Neg>::Output: Clone + Copy + Ord,
+    <T::Output as std::ops::Neg>::Output: Clone + Copy + Ord + Debug + Send,
 {
     type Output = <T::Output as std::ops::Neg>::Output;
 
@@ -181,11 +181,11 @@ where
 
 impl<K, T, R> Operation<K> for AddKey<T, R>
 where
-    K: Clone + Copy + Ord,
+    K: Clone + Copy + Ord + Debug + Send,
     R: Clone + Copy + Debug,
     T: Operation<K> + Clone,
     T::Output: std::ops::Add<R>,
-    <T::Output as std::ops::Add<R>>::Output: Clone + Copy + Ord,
+    <T::Output as std::ops::Add<R>>::Output: Clone + Copy + Ord + Debug + Send,
 {
     type Output = <T::Output as std::ops::Add<R>>::Output;
 
@@ -200,11 +200,11 @@ where
 
 impl<K, T, R> Operation<K> for MulKey<T, R>
 where
-    K: Clone + Copy + Ord,
+    K: Clone + Copy + Ord + Debug + Send,
     R: Clone + Copy + Debug,
     T: Operation<K> + Clone,
     T::Output: std::ops::Mul<R>,
-    <T::Output as std::ops::Mul<R>>::Output: Clone + Copy + Ord,
+    <T::Output as std::ops::Mul<R>>::Output: Clone + Copy + Ord + Debug + Send,
 {
     type Output = <T::Output as std::ops::Mul<R>>::Output;
 
@@ -219,11 +219,11 @@ where
 
 impl<K, T, R> Operation<K> for DivKey<T, R>
 where
-    K: Clone + Copy + Ord,
+    K: Clone + Copy + Ord + Debug + Send,
     R: Clone + Copy + Debug,
     T: Operation<K> + Clone,
     T::Output: std::ops::Div<R>,
-    <T::Output as std::ops::Div<R>>::Output: Clone + Copy + Ord,
+    <T::Output as std::ops::Div<R>>::Output: Clone + Copy + Ord + Debug + Send,
 {
     type Output = <T::Output as std::ops::Div<R>>::Output;
 
@@ -238,7 +238,7 @@ where
 
 impl<K, T> Operation<K> for Not<T>
 where
-    K: Clone + Copy + Ord,
+    K: Clone + Copy + Ord + Debug + Send,
     T: Operation<K> + Clone,
     T::Output: Into<bool>,
 {
@@ -255,7 +255,7 @@ where
 
 impl<K, T, const N: usize> Operation<K> for Eq<T, T::Output, N>
 where
-    K: Clone + Copy + Ord,
+    K: Clone + Copy + Ord + Debug + Send,
     T: Operation<K> + Clone,
     T::Output: std::cmp::Eq + Debug,
 {
@@ -272,7 +272,7 @@ where
 
 impl<K, T> Operation<K> for Cmp<T, T::Output>
 where
-    K: Clone + Copy + Ord,
+    K: Clone + Copy + Ord + Debug + Send,
     T: Operation<K> + Clone,
     T::Output: Debug,
 {
@@ -289,11 +289,11 @@ where
 
 impl<K, L, R> Operation<K> for Add<L, R>
 where
-    K: Clone + Copy + Ord,
+    K: Clone + Copy + Ord + Debug + Send,
     L: Operation<K> + Clone,
     R: Operation<K> + Clone,
     L::Output: std::ops::Add<R::Output>,
-    <L::Output as std::ops::Add<R::Output>>::Output: Clone + Copy + Ord,
+    <L::Output as std::ops::Add<R::Output>>::Output: Clone + Copy + Ord + Debug + Send,
 {
     type Output = <L::Output as std::ops::Add<R::Output>>::Output;
 
@@ -309,11 +309,11 @@ where
 
 impl<K, L, R> Operation<K> for Mul<L, R>
 where
-    K: Clone + Copy + Ord,
+    K: Clone + Copy + Ord + Debug + Send,
     L: Operation<K> + Clone,
     R: Operation<K> + Clone,
     L::Output: std::ops::Mul<R::Output>,
-    <L::Output as std::ops::Mul<R::Output>>::Output: Clone + Copy + Ord,
+    <L::Output as std::ops::Mul<R::Output>>::Output: Clone + Copy + Ord + Debug + Send,
 {
     type Output = <L::Output as std::ops::Mul<R::Output>>::Output;
 
@@ -329,11 +329,11 @@ where
 
 impl<K, L, R> Operation<K> for Div<L, R>
 where
-    K: Clone + Copy + Ord,
+    K: Clone + Copy + Ord + Debug + Send,
     L: Operation<K> + Clone,
     R: Operation<K> + Clone,
     L::Output: std::ops::Div<R::Output>,
-    <L::Output as std::ops::Div<R::Output>>::Output: Clone + Copy + Ord,
+    <L::Output as std::ops::Div<R::Output>>::Output: Clone + Copy + Ord + Debug + Send,
 {
     type Output = <L::Output as std::ops::Div<R::Output>>::Output;
 
@@ -349,7 +349,7 @@ where
 
 impl<K, L, R> Operation<K> for Min<L, R>
 where
-    K: Clone + Copy + Ord,
+    K: Clone + Copy + Ord + Debug + Send,
     L: Operation<K, Output = K> + Clone,
     R: Operation<K, Output = K> + Clone,
 {
@@ -367,7 +367,7 @@ where
 
 impl<K, L, R> Operation<K> for Max<L, R>
 where
-    K: Clone + Copy + Ord,
+    K: Clone + Copy + Ord + Debug + Send,
     L: Operation<K, Output = K> + Clone,
     R: Operation<K, Output = K> + Clone,
 {
@@ -385,8 +385,8 @@ where
 
 impl<K, T, F, O> Operation<K> for Fold<T, F>
 where
-    K: Clone + Copy + Ord,
-    O: Clone + Copy + Ord,
+    K: Clone + Copy + Ord + Debug + Send,
+    O: Clone + Copy + Ord + Debug + Send,
     T: Operation<K> + Clone,
     F: Fn(&[T::Output]) -> O + Clone,
 {
