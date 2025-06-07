@@ -8,7 +8,7 @@ use std::{slice, vec};
 use itertools::Itertools;
 use num::rational::Ratio;
 use num::{Integer, ToPrimitive};
-use rand::{Rng, RngCore};
+use rand::{thread_rng, Rng, RngCore};
 
 use crate::approx::Approx;
 use crate::util::{
@@ -84,7 +84,7 @@ impl Die {
     }
 
     #[must_use]
-    pub fn sample<G>(&self, rng: &mut G) -> Key
+    pub fn sample_rng<G>(&self, rng: &mut G) -> Key
     where
         G: RngCore,
     {
@@ -97,6 +97,26 @@ impl Die {
             }
         }
         unreachable!()
+    }
+
+    #[must_use]
+    pub fn sample_n_rng<G>(&self, n: usize, rng: &mut G) -> Vec<Key>
+    where
+        G: RngCore,
+    {
+        (0..n).map(|_| self.sample_rng(rng)).collect()
+    }
+
+    #[must_use]
+    pub fn sample(&self) -> Key {
+        let mut rng = thread_rng();
+        self.sample_rng(&mut rng)
+    }
+
+    #[must_use]
+    pub fn sample_n(&self, n: usize) -> Vec<Key> {
+        let mut rng = thread_rng();
+        self.sample_n_rng(n, &mut rng)
     }
 
     pub fn iter(&self) -> Iter<'_> {
@@ -269,7 +289,7 @@ impl Die {
     {
         match strategy {
             EvalStrategy::Any => Ok(Self::eval(dice, op)),
-            EvalStrategy::Approximate => Ok(Self::eval_approx(Approx::default(), dice, op)),
+            EvalStrategy::Approximate => Ok(Self::eval_approx(dice, op)),
             EvalStrategy::Exact => Self::eval_exact(dice, op),
         }
     }
@@ -282,10 +302,8 @@ impl Die {
         F: Fn(&[Key]) -> Key,
     {
         match (Self::iterations_of(&dice), Self::denom_of(&dice)) {
-            (_, None) => Self::eval_approx(Approx::default(), dice, op),
-            (Some(i), _) if i > DIRECT_MAX_ITERATIONS => {
-                Self::eval_approx(Approx::default(), dice, op)
-            }
+            (_, None) => Self::eval_approx(dice, op),
+            (Some(i), _) if i > DIRECT_MAX_ITERATIONS => Self::eval_approx(dice, op),
             (_, Some(d)) => Self::eval_exact_impl(d, dice, op),
         }
     }
@@ -304,7 +322,7 @@ impl Die {
     }
 
     #[must_use]
-    pub fn eval_approx<L, D, F, G>(mut approx: Approx<G>, dice: L, op: F) -> Die
+    pub fn eval_approx_custom<L, D, F, G>(mut approx: Approx<G>, dice: L, op: F) -> Die
     where
         L: Borrow<[D]>,
         D: Borrow<Self>,
@@ -313,9 +331,19 @@ impl Die {
     {
         let dice = dice.borrow();
         approx.approximate(|rng| {
-            let x: Vec<_> = dice.iter().map(|x| x.borrow().sample(rng)).collect();
+            let x: Vec<_> = dice.iter().map(|x| x.borrow().sample_rng(rng)).collect();
             op(x.as_slice())
         })
+    }
+
+    #[must_use]
+    pub fn eval_approx<L, D, F>(dice: L, op: F) -> Die
+    where
+        L: Borrow<[D]>,
+        D: Borrow<Self>,
+        F: Fn(&[Key]) -> Key,
+    {
+        Self::eval_approx_custom(Approx::default(), dice, op)
     }
 
     #[must_use]

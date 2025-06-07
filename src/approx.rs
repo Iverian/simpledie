@@ -94,7 +94,7 @@ where
         self.approximate(move |g| {
             let mut value = init;
             for i in 0..steps {
-                value = op(value, die.sample(g));
+                value = op(value, die.sample_rng(g));
                 if !pred(value) {
                     return i;
                 }

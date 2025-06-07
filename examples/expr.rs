@@ -3,7 +3,7 @@ use std::iter::{once, repeat_n};
 use simpledie::prelude::*;
 
 fn main() {
-    let d = d10().sum_n(10).le(50).eval();
+    let d = d20().max_of_n(2);
     println!("{d:?}");
 }
 
