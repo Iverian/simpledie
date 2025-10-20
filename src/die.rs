@@ -629,7 +629,7 @@ where
                 }
 
                 if negative_outcome != 0 {
-                    let o = map.entry(r1).or_insert(0);
+                    let o = map.entry(r1).or_default();
                     *o += negative_outcome;
                     denom += negative_outcome;
                 }
@@ -639,7 +639,7 @@ where
         }
 
         for (v1, _, o1) in items {
-            let o = map.entry(v1).or_insert(0);
+            let o = map.entry(v1).or_default();
             *o += o1;
             denom += o1;
         }
