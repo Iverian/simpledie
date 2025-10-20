@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::fmt::Debug;
 
 pub type DefaultValue = i32;
@@ -33,6 +34,26 @@ macro_rules! impl_computable_value_trunc {
 impl<T> Value for T where T: Sized + Send + Sync + Debug + Clone + PartialEq + Eq + PartialEq + Ord {}
 
 impl<T> OrderedValue for T where T: Value + PartialOrd + Ord {}
+
+impl ComputableValue for bool {
+    fn compute(&self) -> f64 {
+        if *self {
+            1.0
+        } else {
+            0.0
+        }
+    }
+}
+
+impl ComputableValue for Ordering {
+    fn compute(&self) -> f64 {
+        match self {
+            Ordering::Less => -1.0,
+            Ordering::Equal => 0.0,
+            Ordering::Greater => 1.0,
+        }
+    }
+}
 
 impl_computable_value_from!(u8);
 impl_computable_value_from!(u16);

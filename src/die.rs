@@ -1,6 +1,8 @@
 use std::borrow::Borrow;
 use std::collections::{BTreeMap, HashMap};
+use std::fmt::Debug;
 use std::iter::Zip;
+use std::ops::Range;
 use std::sync::Arc;
 use std::{slice, vec};
 
@@ -15,7 +17,7 @@ pub type Iter<'a, T> = Zip<slice::Iter<'a, T>, slice::Iter<'a, Outcome>>;
 type Map<T> = BTreeMap<T, Outcome>;
 type Ptr<T> = Arc<T>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Die<T = DefaultValue>(Ptr<DieInner<T>>)
 where
     T: Value;
@@ -83,6 +85,31 @@ where
     }
 
     #[must_use]
+    pub fn denom(&self) -> Outcome {
+        self.0.denom
+    }
+
+    #[must_use]
+    pub fn values(&self) -> &[T] {
+        &self.0.values
+    }
+
+    #[must_use]
+    pub fn outcomes(&self) -> &[Outcome] {
+        &self.0.outcomes
+    }
+
+    #[must_use]
+    pub fn min_value(&self) -> &T {
+        self.0.values.first().unwrap()
+    }
+
+    #[must_use]
+    pub fn max_value(&self) -> &T {
+        self.0.values.last().unwrap()
+    }
+
+    #[must_use]
     pub fn sample_rng<G>(&self, rng: &mut G) -> &T
     where
         G: RngCore,
@@ -126,6 +153,11 @@ where
     #[must_use]
     pub fn mode(&self) -> Option<&T> {
         self.0.mode()
+    }
+
+    #[must_use]
+    pub fn probabilities(&self) -> Vec<f64> {
+        self.0.probabilities()
     }
 
     pub fn iter(&self) -> Iter<'_, T> {
@@ -222,6 +254,22 @@ where
     }
 
     #[must_use]
+    pub fn explode<P, F>(&self, range: Range<usize>, p: P, f: F) -> Self
+    where
+        P: Fn(&[T]) -> bool,
+        F: Fn(&T, &T) -> T,
+    {
+        if range.end == 0 {
+            return Self::zero();
+        }
+        if range.end == 1 {
+            return self.clone();
+        }
+
+        Self(Ptr::new(self.0.explode(range.start, range.end, p, f)))
+    }
+
+    #[must_use]
     pub(crate) fn from_map(map: Map<T>, denom: Outcome) -> Self {
         Self(Ptr::new(DieInner::from_map(map, denom)))
     }
@@ -239,6 +287,11 @@ where
     #[must_use]
     pub fn variance(&self) -> f64 {
         self.0.variance()
+    }
+
+    #[must_use]
+    pub fn stddev(&self) -> f64 {
+        self.0.stddev()
     }
 }
 
@@ -276,12 +329,53 @@ where
     }
 }
 
+impl<T> Debug for Die<T>
+where
+    T: Value,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Die")
+            .field("denom", &self.0.denom)
+            .field("values", &self.0.values)
+            .field("outcomes", &self.0.outcomes)
+            .finish()
+    }
+}
+
 impl<T> DieInner<T>
 where
     T: Value,
 {
     fn iter(&self) -> Iter<'_, T> {
         self.values.iter().zip(self.outcomes.iter())
+    }
+
+    #[must_use]
+    fn modes(&self) -> Vec<&T> {
+        self.values
+            .iter()
+            .zip(&self.outcomes)
+            .max_set_by_key(|(_, o)| **o)
+            .into_iter()
+            .map(|(v, _)| v)
+            .collect()
+    }
+
+    #[must_use]
+    fn mode(&self) -> Option<&T> {
+        self.values
+            .iter()
+            .zip(&self.outcomes)
+            .max_by_key(|(_, o)| **o)
+            .map(|(v, _)| v)
+    }
+
+    #[must_use]
+    fn probabilities(&self) -> Vec<f64> {
+        self.outcomes
+            .iter()
+            .map(|x| *x as f64 / self.denom as f64)
+            .collect_vec()
     }
 
     #[must_use]
@@ -363,7 +457,7 @@ where
     }
 
     #[must_use]
-    pub fn apply<I, Q, D, O, F>(dice: I, f: F) -> DieInner<O>
+    fn apply<I, Q, D, O, F>(dice: I, f: F) -> DieInner<O>
     where
         I: Borrow<[Q]>,
         Q: Borrow<D>,
@@ -403,7 +497,7 @@ where
     }
 
     #[must_use]
-    pub fn combine<I, Q, D>(dice: I) -> DieInner<Vec<T>>
+    fn combine<I, Q, D>(dice: I) -> DieInner<Vec<T>>
     where
         I: Borrow<[Q]>,
         Q: Borrow<D>,
@@ -458,17 +552,17 @@ where
     #[must_use]
     fn fold_assoc<F>(&self, n: usize, f: F) -> Self
     where
-        F: Fn(&T, &T) -> T + Clone + Copy,
+        F: Fn(&T, &T) -> T,
     {
         let mut cache = HashMap::new();
-        cache.insert(2, self.apply_two(self, f));
+        cache.insert(2, self.apply_two(self, &f));
 
         let mut stack = vec![n];
         while let Some(&x) = stack.last() {
             if x % 2 == 0 {
                 let m = x / 2;
                 if let Some(d) = cache.get(&m) {
-                    cache.insert(x, d.apply_two(d, f));
+                    cache.insert(x, d.apply_two(d, &f));
                     stack.pop();
                 } else {
                     stack.push(m);
@@ -476,7 +570,7 @@ where
             } else {
                 let m = x - 1;
                 if let Some(d) = cache.get(&m) {
-                    cache.insert(x, d.apply_two(self, f));
+                    cache.insert(x, d.apply_two(self, &f));
                     stack.pop();
                 } else {
                     stack.push(m);
@@ -488,25 +582,72 @@ where
     }
 
     #[must_use]
-    pub fn modes(&self) -> Vec<&T> {
-        self.values
-            .iter()
-            .zip(&self.outcomes)
-            .max_set_by_key(|(_, o)| **o)
+    fn explode<P, F>(&self, min: usize, max: usize, p: P, f: F) -> Self
+    where
+        P: Fn(&[T]) -> bool,
+        F: Fn(&T, &T) -> T,
+    {
+        fn fold_with<T, F>(x: &[T], f: F) -> T
+        where
+            T: Clone,
+            F: Fn(&T, &T) -> T,
+        {
+            let mut result = x[0].clone();
+            for i in x.iter().skip(1) {
+                result = f(&result, i);
+            }
+            result
+        }
+
+        let m = self.values.len();
+        let mut map = Map::new();
+        let mut denom = 0;
+
+        let dice = Self::combine::<_, _, Self>(vec![self; min]);
+        let mut items = dice
+            .values
             .into_iter()
-            .map(|(v, _)| v)
-            .collect()
+            .zip(dice.outcomes)
+            .map(|(v, o)| (fold_with(&v, &f), v, o))
+            .collect_vec();
+
+        for _ in min..max {
+            let mut new_items = Vec::with_capacity(items.len() * m);
+
+            for (r1, v1, o1) in items {
+                let mut negative_outcome = 0;
+
+                for (v2, o2) in self.iter() {
+                    let outcome = o1 * *o2;
+                    let mut value = v1.clone();
+                    value.push(v2.clone());
+                    if p(&value) {
+                        new_items.push((f(&r1, v2), value, outcome));
+                    } else {
+                        negative_outcome += outcome;
+                    }
+                }
+
+                if negative_outcome != 0 {
+                    let o = map.entry(r1).or_insert(0);
+                    *o += negative_outcome;
+                    denom += negative_outcome;
+                }
+            }
+
+            items = new_items;
+        }
+
+        for (v1, _, o1) in items {
+            let o = map.entry(v1).or_insert(0);
+            *o += o1;
+            denom += o1;
+        }
+
+        Self::from_map(map, denom)
     }
 
     #[must_use]
-    pub fn mode(&self) -> Option<&T> {
-        self.values
-            .iter()
-            .zip(&self.outcomes)
-            .max_by_key(|(_, o)| **o)
-            .map(|(v, _)| v)
-    }
-
     fn denom_of<I, Q, D>(dice: &I) -> Option<Outcome>
     where
         I: Borrow<[Q]>,
@@ -518,6 +659,7 @@ where
             .try_fold(1 as Outcome, |acc, x| acc.checked_mul(x.borrow().denom()))
     }
 
+    #[must_use]
     fn iterations_of<I, Q, D>(dice: &I) -> Option<usize>
     where
         I: Borrow<[Q]>,
@@ -535,12 +677,12 @@ where
     T: ComputableValue,
 {
     #[must_use]
-    pub fn mean(&self) -> f64 {
+    fn mean(&self) -> f64 {
         self.mean_computed(self.values.iter().map(|x| x.compute()))
     }
 
     #[must_use]
-    pub fn variance(&self) -> f64 {
+    fn variance(&self) -> f64 {
         let computed = self.compute();
         let mean = self.mean_computed(computed.iter());
 
@@ -552,6 +694,11 @@ where
                 acc
             })
             / (self.denom as f64)
+    }
+
+    #[must_use]
+    fn stddev(&self) -> f64 {
+        self.variance().sqrt()
     }
 
     fn compute(&self) -> Vec<f64> {

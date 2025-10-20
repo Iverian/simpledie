@@ -1,7 +1,7 @@
 use std::sync::LazyLock;
 
 use crate::die::Die;
-use crate::duality::DualityResult;
+use crate::duality::Duality;
 
 pub static D0: LazyLock<Die> = LazyLock::new(Die::zero);
 pub static D1: LazyLock<Die> = LazyLock::new(|| Die::scalar(1));
@@ -16,8 +16,8 @@ pub static D20: LazyLock<Die> = LazyLock::new(|| Die::numeric(20));
 pub static D100: LazyLock<Die> = LazyLock::new(|| Die::numeric(100));
 pub static D20KH: LazyLock<Die> = LazyLock::new(|| D20.apply_two(&D20, |&x, &y| x.max(y)));
 pub static D20KL: LazyLock<Die> = LazyLock::new(|| D20.apply_two(&D20, |&x, &y| x.min(y)));
-pub static DUAL: LazyLock<Die<DualityResult>> =
-    LazyLock::new(|| D12.apply_two(&D12, |&h, &f| DualityResult::new(h, f)));
+pub static DUAL: LazyLock<Die<Duality>> =
+    LazyLock::new(|| D12.apply_two(&D12, |&h, &f| Duality::new(h, f)));
 
 pub fn d0() -> Die {
     D0.clone()
@@ -67,6 +67,6 @@ pub fn d20kl() -> Die {
     D20KL.clone()
 }
 
-pub fn dual() -> Die<DualityResult> {
+pub fn dual() -> Die<Duality> {
     DUAL.clone()
 }

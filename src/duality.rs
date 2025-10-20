@@ -1,61 +1,64 @@
-use crate::{ComputableValue, value::DefaultValue};
+use std::ops::{Add, Sub};
+
+use crate::value::DefaultValue;
+use crate::ComputableValue;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum DualityResult {
+pub enum Duality {
     Fear(DefaultValue),
     Hope(DefaultValue),
     Critical,
 }
 
-impl DualityResult {
+impl Duality {
     #[must_use]
     pub fn new(hope: DefaultValue, fear: DefaultValue) -> Self {
         if hope == fear {
-            DualityResult::Critical
+            Duality::Critical
         } else if hope > fear {
-            DualityResult::Hope(hope + fear)
+            Duality::Hope(hope + fear)
         } else {
-            DualityResult::Fear(hope + fear)
+            Duality::Fear(hope + fear)
         }
     }
 }
 
-impl ComputableValue for DualityResult {
+impl ComputableValue for Duality {
     fn compute(&self) -> f64 {
         match self {
-            DualityResult::Fear(x) => -x.compute(),
-            DualityResult::Hope(x) => x.compute(),
-            DualityResult::Critical => 0f64,
+            Duality::Fear(x) => -x.compute(),
+            Duality::Hope(x) => x.compute(),
+            Duality::Critical => 0f64,
         }
     }
 }
 
-impl<T> std::ops::Add<T> for DualityResult
+impl<T> Add<T> for Duality
 where
-    DefaultValue: std::ops::Add<T, Output = DefaultValue>,
+    DefaultValue: Add<T, Output = DefaultValue>,
 {
-    type Output = DualityResult;
+    type Output = Self;
 
     fn add(self, rhs: T) -> Self::Output {
         match self {
-            DualityResult::Fear(x) => DualityResult::Fear(x.add(rhs)),
-            DualityResult::Hope(x) => DualityResult::Hope(x.add(rhs)),
-            DualityResult::Critical => DualityResult::Critical,
+            Duality::Fear(x) => Duality::Fear(x.add(rhs)),
+            Duality::Hope(x) => Duality::Hope(x.add(rhs)),
+            Duality::Critical => Duality::Critical,
         }
     }
 }
 
-impl<T> std::ops::Sub<T> for DualityResult
+impl<T> Sub<T> for Duality
 where
-    DefaultValue: std::ops::Sub<T, Output = DefaultValue>,
+    DefaultValue: Sub<T, Output = DefaultValue>,
 {
-    type Output = DualityResult;
+    type Output = Self;
 
     fn sub(self, rhs: T) -> Self::Output {
         match self {
-            DualityResult::Fear(x) => DualityResult::Fear(x.sub(rhs)),
-            DualityResult::Hope(x) => DualityResult::Hope(x.sub(rhs)),
-            DualityResult::Critical => DualityResult::Critical,
+            Duality::Fear(x) => Duality::Fear(x.sub(rhs)),
+            Duality::Hope(x) => Duality::Hope(x.sub(rhs)),
+            Duality::Critical => Duality::Critical,
         }
     }
 }

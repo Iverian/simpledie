@@ -11,7 +11,7 @@ where
     L: Value,
 {
     #[must_use]
-    fn vadd<R>(self, rhs: R) -> Die<L::Output>
+    pub fn vadd<R>(self, rhs: R) -> Die<L::Output>
     where
         R: Value,
         R: Value,
@@ -27,7 +27,7 @@ where
     L: Value,
 {
     #[must_use]
-    fn vsub<R>(self, rhs: R) -> Die<L::Output>
+    pub fn vsub<R>(self, rhs: R) -> Die<L::Output>
     where
         R: Value,
         R: Value,
@@ -43,7 +43,7 @@ where
     L: Value,
 {
     #[must_use]
-    fn add<R>(self, rhs: Die<R>) -> Die<L::Output>
+    pub fn dadd<R>(self, rhs: Die<R>) -> Die<L::Output>
     where
         R: Value,
         R: Value,
@@ -59,7 +59,7 @@ where
     L: Value,
 {
     #[must_use]
-    fn sub<R>(self, rhs: Die<R>) -> Die<L::Output>
+    pub fn dsub<R>(self, rhs: Die<R>) -> Die<L::Output>
     where
         R: Value,
         R: Value,
@@ -240,7 +240,7 @@ where
     type Output = Die<L::Output>;
 
     fn add(self, rhs: Die<R>) -> Self::Output {
-        self.add(rhs)
+        self.dadd(rhs)
     }
 }
 
@@ -254,7 +254,7 @@ where
     type Output = Die<L::Output>;
 
     fn sub(self, rhs: Die<R>) -> Self::Output {
-        self.sub(rhs)
+        self.dsub(rhs)
     }
 }
 
