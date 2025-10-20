@@ -46,23 +46,18 @@ where
 
         for _ in 1..self.min_sample_size {
             let k = op(&mut self.rng);
-            outcomes
-                .entry(k.clone())
-                .and_modify(|x| *x += 1)
-                .or_insert(1);
-
-            s += k.compute();
+            s += k.compute_f64();
+            let e = outcomes.entry(k).or_default();
+            *e += 1;
         }
 
         for i in self.min_sample_size..self.max_sample_size {
             let k = op(&mut self.rng);
-            outcomes
-                .entry(k.clone())
-                .and_modify(|x| *x += 1)
-                .or_insert(1);
-
             let sp = s;
-            s += k.compute();
+            s += k.compute_f64();
+            let e = outcomes.entry(k).or_default();
+            *e += 1;
+
             let mp = sp / f64::from(i - 1);
             let mc = s / f64::from(i);
             if (mp - mc).abs() < self.accuracy {

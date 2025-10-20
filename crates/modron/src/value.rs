@@ -8,14 +8,18 @@ pub trait Value: Sized + Send + Sync + Debug + Clone + PartialEq + Eq + PartialO
 pub trait OrderedValue: PartialOrd + Ord + Value {}
 
 pub trait ComputableValue: Value {
-    fn compute(&self) -> f64;
+    fn compute(&self) -> i128;
+
+    fn compute_f64(&self) -> f64 {
+        self.compute() as f64
+    }
 }
 
 macro_rules! impl_computable_value_from {
     ($typ:ty) => {
         impl $crate::value::ComputableValue for $typ {
-            fn compute(&self) -> f64 {
-                f64::from(*self)
+            fn compute(&self) -> i128 {
+                i128::from(*self)
             }
         }
     };
@@ -24,8 +28,8 @@ macro_rules! impl_computable_value_from {
 macro_rules! impl_computable_value_trunc {
     ($typ:ty) => {
         impl $crate::value::ComputableValue for $typ {
-            fn compute(&self) -> f64 {
-                *self as f64
+            fn compute(&self) -> i128 {
+                *self as i128
             }
         }
     };
@@ -36,21 +40,21 @@ impl<T> Value for T where T: Sized + Send + Sync + Debug + Clone + PartialEq + E
 impl<T> OrderedValue for T where T: Value + PartialOrd + Ord {}
 
 impl ComputableValue for bool {
-    fn compute(&self) -> f64 {
+    fn compute(&self) -> i128 {
         if *self {
-            1.0
+            1
         } else {
-            0.0
+            0
         }
     }
 }
 
 impl ComputableValue for Ordering {
-    fn compute(&self) -> f64 {
+    fn compute(&self) -> i128 {
         match self {
-            Ordering::Less => -1.0,
-            Ordering::Equal => 0.0,
-            Ordering::Greater => 1.0,
+            Ordering::Less => -1,
+            Ordering::Equal => 0,
+            Ordering::Greater => 1,
         }
     }
 }

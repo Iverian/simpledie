@@ -1,12 +1,16 @@
-[package]
-name = "simpledie"
-version = "0.1.0"
+[workspace]
+resolver = "3"
+members = ["crates/modron", "crates/modron-toolkit"]
+
+[workspace.package]
 edition = "2024"
 
-[dependencies]
-bon = "3.8.1"
-itertools = "0.14.0"
+[workspace.dependencies]
+modron = { path = "crates/modron" }
+modron-toolkit = { path = "crates/modron-toolkit" }
+
 rand = "0.9.2"
+bon = "3.8.1"
 
 [workspace.lints.clippy]
 penantic = "warn"

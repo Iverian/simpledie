@@ -2,7 +2,6 @@ use std::borrow::Borrow;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
 use std::iter::Zip;
-use std::ops::Range;
 use std::sync::Arc;
 use std::{slice, vec};
 
@@ -254,19 +253,28 @@ where
     }
 
     #[must_use]
-    pub fn explode<P, F>(&self, range: Range<usize>, p: P, f: F) -> Self
+    pub fn explode<P, F>(&self, min: usize, max: usize, predicate: P, fold: F) -> Self
     where
         P: Fn(&[T]) -> bool,
         F: Fn(&T, &T) -> T,
     {
-        if range.end == 0 {
+        if max == 0 {
             return Self::zero();
         }
-        if range.end == 1 {
+        if max == 1 {
             return self.clone();
         }
 
-        Self(Ptr::new(self.0.explode(range.start, range.end, p, f)))
+        Self(Ptr::new(self.0.explode(min, max, predicate, fold)))
+    }
+
+    #[must_use]
+    pub fn explode_one<P, F>(&self, max: usize, predicate: P, fold: F) -> Self
+    where
+        P: Fn(&[T]) -> bool,
+        F: Fn(&T, &T) -> T,
+    {
+        self.explode(1, max, predicate, fold)
     }
 
     #[must_use]
@@ -292,6 +300,11 @@ where
     #[must_use]
     pub fn stddev(&self) -> f64 {
         self.0.stddev()
+    }
+
+    #[must_use]
+    pub fn computed_values(&self) -> Vec<i128> {
+        self.0.computed_values()
     }
 }
 
@@ -601,7 +614,6 @@ where
 
         let m = self.values.len();
         let mut map = Map::new();
-        let mut denom = 0;
 
         let dice = Self::combine::<_, _, Self>(vec![self; min]);
         let mut items = dice
@@ -611,7 +623,8 @@ where
             .map(|(v, o)| (fold_with(&v, &f), v, o))
             .collect_vec();
 
-        for _ in min..max {
+        for i in (min + 1)..=max {
+            let trees = self.denom.pow((max - i) as u32);
             let mut new_items = Vec::with_capacity(items.len() * m);
 
             for (r1, v1, o1) in items {
@@ -630,8 +643,8 @@ where
 
                 if negative_outcome != 0 {
                     let o = map.entry(r1).or_default();
+                    negative_outcome *= trees;
                     *o += negative_outcome;
-                    denom += negative_outcome;
                 }
             }
 
@@ -641,10 +654,9 @@ where
         for (v1, _, o1) in items {
             let o = map.entry(v1).or_default();
             *o += o1;
-            denom += o1;
         }
 
-        Self::from_map(map, denom)
+        Self::from_map(map, self.denom.pow(max as u32))
     }
 
     #[must_use]
@@ -678,12 +690,12 @@ where
 {
     #[must_use]
     fn mean(&self) -> f64 {
-        self.mean_computed(self.values.iter().map(|x| x.compute()))
+        self.mean_computed(self.values.iter().map(|x| x.compute_f64()))
     }
 
     #[must_use]
     fn variance(&self) -> f64 {
-        let computed = self.compute();
+        let computed = self.computed_f64();
         let mean = self.mean_computed(computed.iter());
 
         computed
@@ -701,8 +713,13 @@ where
         self.variance().sqrt()
     }
 
-    fn compute(&self) -> Vec<f64> {
+    #[must_use]
+    fn computed_values(&self) -> Vec<i128> {
         self.values.iter().map(|x| x.compute()).collect()
+    }
+
+    fn computed_f64(&self) -> Vec<f64> {
+        self.values.iter().map(|x| x.compute_f64()).collect()
     }
 
     fn mean_computed<I, F>(&self, computed: I) -> f64
