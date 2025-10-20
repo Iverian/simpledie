@@ -1,11 +1,13 @@
+use std::collections::BTreeMap;
+
 use bon::Builder;
 use rand::rngs::ThreadRng;
-use rand::{thread_rng, RngCore};
+use rand::{rng, RngCore};
 
-use crate::util::{
-    die_map, Entry, Key, Value, APPROX_ACCURACY, APPROX_MAX_SAMPLE_SIZE, APPROX_MIN_SAMPLE_SIZE,
+use crate::die::Outcome;
+use crate::{
+    ComputableValue, Die, APPROX_ACCURACY, APPROX_MAX_SAMPLE_SIZE, APPROX_MIN_SAMPLE_SIZE,
 };
-use crate::Die;
 
 #[derive(Debug, Builder)]
 pub struct Approx<G = ThreadRng>
@@ -24,7 +26,7 @@ where
 
 impl Default for Approx<ThreadRng> {
     fn default() -> Self {
-        Self::builder().build(thread_rng())
+        Self::builder().build(rng())
     }
 }
 
@@ -33,73 +35,42 @@ where
     G: RngCore,
 {
     #[must_use]
-    pub fn approximate<F>(&mut self, mut op: F) -> Die
+    pub fn eval<T, F>(&mut self, mut op: F) -> Die<T>
     where
-        F: FnMut(&mut G) -> Key,
+        T: ComputableValue,
+        F: FnMut(&mut G) -> T,
     {
-        let mut outcomes = die_map();
+        let mut outcomes: BTreeMap<T, u128> = BTreeMap::new();
         let mut s = 0f64;
         let mut denom = None;
 
         for _ in 1..self.min_sample_size {
             let k = op(&mut self.rng);
+            outcomes
+                .entry(k.clone())
+                .and_modify(|x| *x += 1)
+                .or_insert(1);
 
-            match outcomes.entry(k) {
-                Entry::Vacant(e) => {
-                    e.insert(1);
-                }
-                Entry::Occupied(mut e) => {
-                    *e.get_mut() += 1;
-                }
-            }
-
-            s += f64::from(k);
+            s += k.compute();
         }
 
         for i in self.min_sample_size..self.max_sample_size {
             let k = op(&mut self.rng);
-
-            match outcomes.entry(k) {
-                Entry::Vacant(e) => {
-                    e.insert(1);
-                }
-                Entry::Occupied(mut e) => {
-                    *e.get_mut() += 1;
-                }
-            }
+            outcomes
+                .entry(k.clone())
+                .and_modify(|x| *x += 1)
+                .or_insert(1);
 
             let sp = s;
-            s += f64::from(k);
+            s += k.compute();
             let mp = sp / f64::from(i - 1);
             let mc = s / f64::from(i);
             if (mp - mc).abs() < self.accuracy {
-                denom = Some(i);
+                denom = Some(i as Outcome);
                 break;
             }
         }
 
-        let denom = Value::from(denom.unwrap_or(self.max_sample_size));
-        println!("approx iterations: {denom}");
-
-        Die::from_map(denom, outcomes)
-    }
-
-    #[must_use]
-    pub fn count_throws<P, F>(&mut self, die: Die, init: Key, pred: P, op: F) -> Die
-    where
-        P: Fn(Key) -> bool,
-        F: Fn(Key, Key) -> Key,
-    {
-        let steps = Key::try_from(self.max_sample_size).unwrap_or(Key::MAX);
-        self.approximate(move |g| {
-            let mut value = init;
-            for i in 0..steps {
-                value = op(value, die.sample_rng(g));
-                if !pred(value) {
-                    return i;
-                }
-            }
-            steps
-        })
+        Die::from_map(outcomes, denom.unwrap_or(self.max_sample_size as Outcome))
     }
 }

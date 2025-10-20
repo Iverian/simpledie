@@ -1,18 +1,27 @@
-use std::num::NonZeroU16;
 use std::sync::LazyLock;
 
-use crate::Die;
+use crate::die::Die;
+use crate::duality::DualityResult;
 
-pub static D1: LazyLock<Die> = LazyLock::new(|| Die::uniform(NonZeroU16::new(1).unwrap()));
-pub static D2: LazyLock<Die> = LazyLock::new(|| Die::uniform(NonZeroU16::new(2).unwrap()));
-pub static D3: LazyLock<Die> = LazyLock::new(|| Die::uniform(NonZeroU16::new(3).unwrap()));
-pub static D4: LazyLock<Die> = LazyLock::new(|| Die::uniform(NonZeroU16::new(4).unwrap()));
-pub static D6: LazyLock<Die> = LazyLock::new(|| Die::uniform(NonZeroU16::new(6).unwrap()));
-pub static D8: LazyLock<Die> = LazyLock::new(|| Die::uniform(NonZeroU16::new(8).unwrap()));
-pub static D10: LazyLock<Die> = LazyLock::new(|| Die::uniform(NonZeroU16::new(10).unwrap()));
-pub static D12: LazyLock<Die> = LazyLock::new(|| Die::uniform(NonZeroU16::new(12).unwrap()));
-pub static D20: LazyLock<Die> = LazyLock::new(|| Die::uniform(NonZeroU16::new(20).unwrap()));
-pub static D100: LazyLock<Die> = LazyLock::new(|| Die::uniform(NonZeroU16::new(100).unwrap()));
+pub static D0: LazyLock<Die> = LazyLock::new(Die::zero);
+pub static D1: LazyLock<Die> = LazyLock::new(|| Die::scalar(1));
+pub static D2: LazyLock<Die> = LazyLock::new(|| Die::numeric(2));
+pub static D3: LazyLock<Die> = LazyLock::new(|| Die::numeric(3));
+pub static D4: LazyLock<Die> = LazyLock::new(|| Die::numeric(4));
+pub static D6: LazyLock<Die> = LazyLock::new(|| Die::numeric(6));
+pub static D8: LazyLock<Die> = LazyLock::new(|| Die::numeric(8));
+pub static D10: LazyLock<Die> = LazyLock::new(|| Die::numeric(10));
+pub static D12: LazyLock<Die> = LazyLock::new(|| Die::numeric(12));
+pub static D20: LazyLock<Die> = LazyLock::new(|| Die::numeric(20));
+pub static D100: LazyLock<Die> = LazyLock::new(|| Die::numeric(100));
+pub static D20KH: LazyLock<Die> = LazyLock::new(|| D20.apply_two(&D20, |&x, &y| x.max(y)));
+pub static D20KL: LazyLock<Die> = LazyLock::new(|| D20.apply_two(&D20, |&x, &y| x.min(y)));
+pub static DUAL: LazyLock<Die<DualityResult>> =
+    LazyLock::new(|| D12.apply_two(&D12, |&h, &f| DualityResult::new(h, f)));
+
+pub fn d0() -> Die {
+    D0.clone()
+}
 
 pub fn d1() -> Die {
     D1.clone()
@@ -50,6 +59,14 @@ pub fn d20() -> Die {
     D20.clone()
 }
 
-pub fn d100() -> Die {
-    D100.clone()
+pub fn d20kh() -> Die {
+    D20KH.clone()
+}
+
+pub fn d20kl() -> Die {
+    D20KL.clone()
+}
+
+pub fn dual() -> Die<DualityResult> {
+    DUAL.clone()
 }

@@ -4,11 +4,6 @@ use thiserror::Error;
 
 use crate::Die;
 
-pub const APPROX_MAX_SAMPLE_SIZE: u32 = u32::MAX;
-pub const APPROX_MIN_SAMPLE_SIZE: u32 = 50_000_000;
-pub const APPROX_ACCURACY: f64 = 1e-9;
-pub const DIRECT_MAX_ITERATIONS: usize = 100_000_000;
-
 pub type Key = i32;
 pub type Value = u64;
 pub type DieMap = BTreeMap<Key, Value>;

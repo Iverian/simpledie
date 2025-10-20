@@ -1,25 +1,15 @@
-#![warn(clippy::pedantic)]
-#![allow(clippy::missing_panics_doc, clippy::missing_errors_doc)]
-
-pub mod approx;
+mod approx;
 pub mod defs;
-pub mod die;
-pub mod expr;
+mod die;
+mod duality;
+mod expr;
 pub mod prelude;
-mod util;
+mod value;
 
-use util::{Key, Value};
+pub use approx::Approx;
+pub use die::Die;
+pub use value::{ComputableValue, OrderedValue, Value};
 
-#[derive(Debug, Clone)]
-pub struct Die {
-    denom: Value,
-    keys: Vec<Key>,
-    outcomes: Vec<Value>,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum EvalStrategy {
-    Any,
-    Approximate,
-    Exact,
-}
+const APPROX_MAX_SAMPLE_SIZE: u32 = u32::MAX;
+const APPROX_MIN_SAMPLE_SIZE: u32 = 50_000_000;
+const APPROX_ACCURACY: f64 = 1e-9;

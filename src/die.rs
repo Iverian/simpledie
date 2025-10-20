@@ -1,106 +1,105 @@
-use core::f64;
 use std::borrow::Borrow;
-use std::collections::HashMap;
-use std::iter::{IntoIterator, Zip};
-use std::num::NonZeroU16;
+use std::collections::{BTreeMap, HashMap};
+use std::iter::Zip;
+use std::sync::Arc;
 use std::{slice, vec};
 
 use itertools::Itertools;
-use num::rational::Ratio;
-use num::{Integer, ToPrimitive};
-use rand::{thread_rng, Rng, RngCore};
+use rand::{rng, Rng, RngCore};
 
-use crate::approx::Approx;
-use crate::util::{
-    die_map, BigInt, BigRatio, DieMap, Entry, Key, OverflowError, OverflowResult, Value,
-    DIRECT_MAX_ITERATIONS,
-};
-use crate::{Die, EvalStrategy};
+use crate::value::{ComputableValue, DefaultValue, Value};
 
-pub type Iter<'a> = Zip<slice::Iter<'a, Key>, slice::Iter<'a, Value>>;
-pub type IntoIter = Zip<vec::IntoIter<Key>, vec::IntoIter<Value>>;
+pub type Outcome = u128;
+pub type Iter<'a, T> = Zip<slice::Iter<'a, T>, slice::Iter<'a, Outcome>>;
+
+type Map<T> = BTreeMap<T, Outcome>;
+type Ptr<T> = Arc<T>;
+
+#[derive(Clone, Debug)]
+pub struct Die<T = DefaultValue>(Ptr<DieInner<T>>)
+where
+    T: Value;
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct DieInner<T = DefaultValue>
+where
+    T: Value,
+{
+    denom: Outcome,
+    outcomes: Vec<Outcome>,
+    values: Vec<T>,
+}
+
+trait DieLike<T>
+where
+    T: Value,
+{
+    fn denom(&self) -> Outcome;
+    fn values(&self) -> &[T];
+    fn outcomes(&self) -> &[Outcome];
+}
 
 impl Die {
     #[must_use]
-    pub fn new<K, V>(values: Vec<(K, V)>) -> Self
-    where
-        K: Into<Key>,
-        V: Into<Value>,
-    {
-        let mut denom = 0;
-        let mut keys = Vec::with_capacity(values.len());
-        let mut outcomes = Vec::with_capacity(values.len());
-        for (k, v) in values {
-            let k = k.into();
-            let v = v.into();
-            if v == 0 {
-                continue;
-            }
-            denom += v;
-            keys.push(k);
-            outcomes.push(v);
-        }
-        Self {
-            denom,
-            keys,
-            outcomes,
-        }
+    pub fn numeric(value: DefaultValue) -> Self {
+        Die::uniform(1..=value)
+    }
+}
+
+impl<T> Die<T>
+where
+    T: Value,
+{
+    #[must_use]
+    pub fn zero() -> Self {
+        Self(Ptr::new(DieInner {
+            values: Vec::new(),
+            outcomes: Vec::new(),
+            denom: 0,
+        }))
     }
 
     #[must_use]
-    pub fn uniform(size: NonZeroU16) -> Self {
-        let size = size.get();
-        Self {
-            denom: Value::from(size),
-            keys: (1..=Key::from(size)).collect(),
-            outcomes: vec![1; size as usize],
-        }
-    }
-
-    #[must_use]
-    pub fn uniform_values<K>(keys: Vec<K>) -> Self
-    where
-        K: Into<Key>,
-    {
-        let c = 1;
-        let n = keys.len();
-        Self {
-            denom: Value::try_from(n).unwrap(),
-            keys: keys.into_iter().map(Into::into).collect(),
-            outcomes: vec![c; n],
-        }
-    }
-
-    #[must_use]
-    pub fn single<K>(key: K) -> Self
-    where
-        K: Into<Key>,
-    {
-        Self {
-            denom: 1,
-            keys: vec![key.into()],
+    pub fn scalar(value: T) -> Self {
+        Self(Ptr::new(DieInner {
+            values: vec![value],
             outcomes: vec![1],
-        }
+            denom: 1,
+        }))
     }
 
     #[must_use]
-    pub fn sample_rng<G>(&self, rng: &mut G) -> Key
+    pub fn uniform<I>(values: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+    {
+        let values: Vec<_> = values.into_iter().collect();
+        let n = values.len();
+        Self(Ptr::new(DieInner {
+            values,
+            outcomes: vec![1; n],
+            denom: n as Outcome,
+        }))
+    }
+
+    #[must_use]
+    pub fn sample_rng<G>(&self, rng: &mut G) -> &T
     where
         G: RngCore,
     {
-        let v = rng.gen_range(0..self.denom);
+        let x = rng.random_range(0..self.0.denom);
         let mut pos = 0;
-        for (&k, c) in self {
-            pos += c;
-            if v < pos {
-                return k;
+        for (v, o) in self.0.values.iter().zip(&self.0.outcomes) {
+            pos += o;
+            if x < pos {
+                return v;
             }
         }
         unreachable!()
     }
 
     #[must_use]
-    pub fn sample_n_rng<G>(&self, n: usize, rng: &mut G) -> Vec<Key>
+    pub fn sample_many_rng<G>(&self, n: usize, rng: &mut G) -> Vec<&T>
     where
         G: RngCore,
     {
@@ -108,334 +107,522 @@ impl Die {
     }
 
     #[must_use]
-    pub fn sample(&self) -> Key {
-        let mut rng = thread_rng();
+    pub fn sample(&self) -> &T {
+        let mut rng = rng();
         self.sample_rng(&mut rng)
     }
 
     #[must_use]
-    pub fn sample_n(&self, n: usize) -> Vec<Key> {
-        let mut rng = thread_rng();
-        self.sample_n_rng(n, &mut rng)
-    }
-
-    pub fn iter(&self) -> Iter<'_> {
-        self.keys.iter().zip(self.outcomes.iter())
+    pub fn sample_many(&self, n: usize) -> Vec<&T> {
+        let mut rng = rng();
+        self.sample_many_rng(n, &mut rng)
     }
 
     #[must_use]
-    pub fn keys(&self) -> &[Key] {
-        &self.keys
+    pub fn modes(&self) -> Vec<&T> {
+        self.0.modes()
     }
 
     #[must_use]
-    pub fn outcomes(&self) -> &[Value] {
-        &self.outcomes
+    pub fn mode(&self) -> Option<&T> {
+        self.0.mode()
+    }
+
+    pub fn iter(&self) -> Iter<'_, T> {
+        self.0.values.iter().zip(self.0.outcomes.iter())
     }
 
     #[must_use]
-    pub fn denom(&self) -> Value {
-        self.denom
-    }
-
-    #[must_use]
-    pub fn mode(&self) -> Vec<Key> {
-        self.iter()
-            .max_set_by(|(_, x), (_, y)| x.cmp(y))
-            .into_iter()
-            .map(|(&k, _)| k)
-            .collect()
-    }
-
-    #[must_use]
-    pub fn probabilities(&self) -> Vec<(Key, BigRatio)> {
-        let d = BigInt::from(self.denom);
-        self.iter()
-            .map(|(&k, &c)| (k, Ratio::new(c.into(), d.clone())))
-            .collect()
-    }
-
-    #[must_use]
-    pub fn probabilities_f64(&self) -> Vec<(Key, f64)> {
-        let d = BigInt::from(self.denom);
-        self.iter()
-            .map(|(&k, &c)| {
-                (
-                    k,
-                    Ratio::new(c.into(), d.clone()).to_f64().unwrap_or(f64::NAN),
-                )
-            })
-            .collect()
-    }
-
-    #[must_use]
-    pub fn mean(&self) -> BigRatio {
-        let c = self
-            .iter()
-            .map(|(&k, &c)| Self::map_mean(k, c))
-            .reduce(|acc, x| acc + x)
-            .unwrap();
-        BigRatio::new(c, self.denom.into())
-    }
-
-    #[must_use]
-    pub fn mean_f64(&self) -> f64 {
-        self.mean().to_f64().unwrap_or(f64::NAN)
-    }
-
-    #[must_use]
-    pub fn variance(&self) -> BigRatio {
-        let m = self.mean();
-        let c = self
-            .iter()
-            .map(|(&k, &c)| Self::map_variance(&m, k, c))
-            .reduce(|acc, x| acc + x)
-            .unwrap();
-        c / BigInt::from(self.denom)
-    }
-
-    #[must_use]
-    pub fn variance_f64(&self) -> f64 {
-        self.variance().to_f64().unwrap_or(f64::NAN)
-    }
-
-    #[must_use]
-    pub fn stddev_f64(&self) -> f64 {
-        self.variance_f64().sqrt()
-    }
-
-    fn map_mean(k: Key, c: Value) -> BigInt {
-        let k = BigInt::from(k);
-        let c = BigInt::from(c);
-        k * c
-    }
-
-    fn map_variance(mean: &BigRatio, k: Key, c: Value) -> BigRatio {
-        let k = Ratio::new(BigInt::from(k), 1.into());
-        let c = BigInt::from(c);
-        (k - mean).pow(2) * c
-    }
-
-    #[must_use]
-    pub fn map<F, O>(self, op: F) -> Die
+    pub fn map<O, F>(&self, f: F) -> Die<O>
     where
-        F: Fn(Key) -> O,
-        O: Into<Key>,
+        O: Value,
+        F: Fn(&T) -> O,
     {
-        let mut outcomes = die_map();
-        for (k, c) in self.keys.into_iter().zip(self.outcomes) {
-            match outcomes.entry(op(k).into()) {
-                Entry::Vacant(e) => {
-                    e.insert(c);
-                }
-                Entry::Occupied(mut e) => {
-                    *e.get_mut() += c;
-                }
-            }
+        Die(Ptr::new(self.0.map(f)))
+    }
+
+    #[must_use]
+    pub fn apply_two<R, O, F>(&self, rhs: &Die<R>, f: F) -> Die<O>
+    where
+        R: Value,
+        O: Value,
+        F: Fn(&T, &R) -> O,
+    {
+        Die(Ptr::new(self.0.apply_two(&rhs.0, f)))
+    }
+
+    #[must_use]
+    pub fn apply_three<M, R, O, F>(&self, mhs: &Die<M>, rhs: &Die<R>, f: F) -> Die<O>
+    where
+        M: Value,
+        R: Value,
+        O: Value,
+        F: Fn(&T, &M, &R) -> O,
+    {
+        Die(Ptr::new(self.0.apply_three(&mhs.0, &rhs.0, f)))
+    }
+
+    #[must_use]
+    pub fn apply<I, D, O, F>(dice: I, f: F) -> Die<O>
+    where
+        I: Borrow<[D]>,
+        D: Borrow<Self>,
+        O: Value,
+        F: Fn(&[&T]) -> O,
+    {
+        Die(Ptr::new(DieInner::apply(dice, f)))
+    }
+
+    #[must_use]
+    pub fn repeat(&self, n: usize) -> Die<Vec<T>> {
+        let dice = vec![self; n];
+        Die::combine(dice)
+    }
+
+    #[must_use]
+    pub fn combine<I, D>(dice: I) -> Die<Vec<T>>
+    where
+        I: Borrow<[D]>,
+        D: Borrow<Self>,
+    {
+        Die(Ptr::new(DieInner::combine(dice)))
+    }
+
+    #[must_use]
+    pub fn fold<F>(&self, n: usize, f: F) -> Self
+    where
+        F: Fn(&T, &T) -> T + Clone + Copy,
+    {
+        if n == 0 {
+            return Self::zero();
+        }
+        if n == 1 {
+            return self.clone();
         }
 
-        Die::from_map(self.denom, outcomes)
+        Die(Ptr::new(self.0.fold(n, f)))
     }
 
     #[must_use]
-    pub fn eval_n<F>(self, n: usize, op: F) -> Die
+    pub fn fold_assoc<F>(&self, n: usize, f: F) -> Self
     where
-        F: Fn(Key, Key) -> Key,
+        F: Fn(&T, &T) -> T + Clone + Copy,
     {
-        let mut out = HashMap::new();
-        out.insert(1usize, self);
-        Self::eval_n_step(n, op, &mut out);
-        out.remove(&n).unwrap()
-    }
-
-    fn eval_n_step<F>(n: usize, mut op: F, out: &mut HashMap<usize, Self>) -> F
-    where
-        F: Fn(Key, Key) -> Key,
-    {
-        match n {
-            1 => {}
-            x if x % 2 == 1 => {
-                let m = n - 1;
-                if !out.contains_key(&m) {
-                    op = Self::eval_n_step(m, op, out);
-                }
-                let dm = out.get(&m).unwrap();
-                let d1 = out.get(&1).unwrap();
-                let dn = Self::eval([dm, d1], |x| op(x[0], x[1]));
-                out.insert(n, dn);
-            }
-            _ => {
-                let m = n / 2;
-                if !out.contains_key(&m) {
-                    op = Self::eval_n_step(m, op, out);
-                }
-                let dm = out.get(&m).unwrap();
-                let dn = Self::eval([dm, dm], |x| op(x[0], x[1]));
-                out.insert(n, dn);
-            }
+        if n == 0 {
+            return Self::zero();
         }
-        op
-    }
-
-    pub fn eval_with_strategy<L, D, F>(
-        strategy: EvalStrategy,
-        dice: L,
-        op: F,
-    ) -> OverflowResult<Die>
-    where
-        L: Borrow<[D]>,
-        D: Borrow<Self>,
-        F: Fn(&[Key]) -> Key,
-    {
-        match strategy {
-            EvalStrategy::Any => Ok(Self::eval(dice, op)),
-            EvalStrategy::Approximate => Ok(Self::eval_approx(dice, op)),
-            EvalStrategy::Exact => Self::eval_exact(dice, op),
+        if n == 1 {
+            return self.clone();
         }
-    }
-
-    #[must_use]
-    pub fn eval<L, D, F>(dice: L, op: F) -> Die
-    where
-        L: Borrow<[D]>,
-        D: Borrow<Self>,
-        F: Fn(&[Key]) -> Key,
-    {
-        match (Self::iterations_of(&dice), Self::denom_of(&dice)) {
-            (_, None) => Self::eval_approx(dice, op),
-            (Some(i), _) if i > DIRECT_MAX_ITERATIONS => Self::eval_approx(dice, op),
-            (_, Some(d)) => Self::eval_exact_impl(d, dice, op),
+        if n == 2 {
+            return self.apply_two(self, f);
         }
-    }
 
-    pub fn eval_exact<L, D, F>(dice: L, op: F) -> OverflowResult<Die>
-    where
-        L: Borrow<[D]>,
-        D: Borrow<Self>,
-        F: Fn(&[Key]) -> Key,
-    {
-        Ok(Self::eval_exact_impl(
-            Self::denom_of(&dice).ok_or(OverflowError)?,
-            dice,
-            op,
-        ))
+        Die(Ptr::new(self.0.fold_assoc(n, f)))
     }
 
     #[must_use]
-    pub fn eval_approx_custom<L, D, F, G>(mut approx: Approx<G>, dice: L, op: F) -> Die
-    where
-        L: Borrow<[D]>,
-        D: Borrow<Self>,
-        F: Fn(&[Key]) -> Key,
-        G: RngCore,
-    {
-        let dice = dice.borrow();
-        approx.approximate(|rng| {
-            let x: Vec<_> = dice.iter().map(|x| x.borrow().sample_rng(rng)).collect();
-            op(x.as_slice())
-        })
+    pub(crate) fn from_map(map: Map<T>, denom: Outcome) -> Self {
+        Self(Ptr::new(DieInner::from_map(map, denom)))
+    }
+}
+
+impl<T> Die<T>
+where
+    T: ComputableValue,
+{
+    #[must_use]
+    pub fn mean(&self) -> f64 {
+        self.0.mean()
     }
 
     #[must_use]
-    pub fn eval_approx<L, D, F>(dice: L, op: F) -> Die
-    where
-        L: Borrow<[D]>,
-        D: Borrow<Self>,
-        F: Fn(&[Key]) -> Key,
-    {
-        Self::eval_approx_custom(Approx::default(), dice, op)
+    pub fn variance(&self) -> f64 {
+        self.0.variance()
+    }
+}
+
+impl<T> DieLike<T> for Die<T>
+where
+    T: Value,
+{
+    fn denom(&self) -> Outcome {
+        self.0.denom
+    }
+
+    fn values(&self) -> &[T] {
+        &self.0.values
+    }
+
+    fn outcomes(&self) -> &[Outcome] {
+        &self.0.outcomes
+    }
+}
+
+impl<T> DieLike<T> for &Die<T>
+where
+    T: Value,
+{
+    fn denom(&self) -> Outcome {
+        self.0.denom
+    }
+
+    fn values(&self) -> &[T] {
+        &self.0.values
+    }
+
+    fn outcomes(&self) -> &[Outcome] {
+        &self.0.outcomes
+    }
+}
+
+impl<T> DieInner<T>
+where
+    T: Value,
+{
+    fn iter(&self) -> Iter<'_, T> {
+        self.values.iter().zip(self.outcomes.iter())
     }
 
     #[must_use]
-    fn eval_exact_impl<L, D, F>(denom: Value, dice: L, op: F) -> Die
-    where
-        L: Borrow<[D]>,
-        D: Borrow<Self>,
-        F: Fn(&[Key]) -> Key,
-    {
-        let dice = dice.borrow();
-        let mut outcomes = die_map();
-        let mut key = Vec::with_capacity(dice.len());
-
-        for p in dice
-            .iter()
-            .map(|x| x.borrow().iter().map(|(&k, &c)| (k, c)))
-            .multi_cartesian_product()
-        {
-            key.clear();
-            let mut count = 1;
-            for (k, c) in p {
-                key.push(k);
-                count *= c;
-            }
-            match outcomes.entry(op(key.as_slice())) {
-                Entry::Vacant(e) => {
-                    e.insert(count);
-                }
-                Entry::Occupied(mut e) => {
-                    *e.get_mut() += count;
-                }
-            }
+    fn from_map(map: Map<T>, mut denom: Outcome) -> Self {
+        let mut values = Vec::with_capacity(map.len());
+        let mut outcomes = Vec::with_capacity(map.len());
+        let mut acc = denom;
+        for (value, outcome) in map {
+            acc = gcd(acc, outcome);
+            values.push(value);
+            outcomes.push(outcome);
         }
-        Die::from_map(denom, outcomes)
-    }
-
-    #[must_use]
-    pub(crate) fn from_map(mut denom: Value, value: DieMap) -> Self {
-        let mut keys = Vec::with_capacity(value.len());
-        let mut outcomes = Vec::with_capacity(value.len());
-        let mut gcd = denom;
-        for (k, v) in value {
-            gcd = gcd.gcd(&v);
-            keys.push(k);
-            outcomes.push(v);
-        }
-        if gcd != 1 {
-            outcomes.iter_mut().for_each(|x| *x /= gcd);
-            denom /= gcd;
+        if acc != 1 {
+            outcomes.iter_mut().for_each(|x| *x /= acc);
+            denom /= acc;
         }
         Self {
             denom,
-            keys,
+            values,
             outcomes,
         }
     }
 
-    fn denom_of<L, D>(dice: &L) -> Option<Value>
+    #[must_use]
+    fn map<O, F>(&self, f: F) -> DieInner<O>
     where
-        L: Borrow<[D]>,
-        D: Borrow<Self>,
+        O: Value,
+        F: Fn(&T) -> O,
+    {
+        let mut map = Map::new();
+
+        for (v1, o1) in self.iter() {
+            let o = map.entry(f(v1)).or_default();
+            *o += o1;
+        }
+
+        DieInner::from_map(map, self.denom)
+    }
+
+    #[must_use]
+    fn apply_two<R, O, F>(&self, rhs: &DieInner<R>, f: F) -> DieInner<O>
+    where
+        R: Value,
+        O: Value,
+        F: Fn(&T, &R) -> O,
+    {
+        let mut map = Map::new();
+
+        for (v1, o1) in self.iter() {
+            for (v2, o2) in rhs.iter() {
+                let o = map.entry(f(v1, v2)).or_default();
+                *o += o1 * o2;
+            }
+        }
+
+        DieInner::from_map(map, self.denom * rhs.denom)
+    }
+
+    #[must_use]
+    fn apply_three<M, R, O, F>(&self, mhs: &DieInner<M>, rhs: &DieInner<R>, f: F) -> DieInner<O>
+    where
+        M: Value,
+        R: Value,
+        O: Value,
+        F: Fn(&T, &M, &R) -> O,
+    {
+        let mut map = Map::new();
+
+        for (v1, o1) in self.iter() {
+            for (v2, o2) in mhs.iter() {
+                for (v3, o3) in rhs.iter() {
+                    let o = map.entry(f(v1, v2, v3)).or_default();
+                    *o += o1 * o2 * o3;
+                }
+            }
+        }
+
+        DieInner::from_map(map, self.denom * rhs.denom)
+    }
+
+    #[must_use]
+    pub fn apply<I, Q, D, O, F>(dice: I, f: F) -> DieInner<O>
+    where
+        I: Borrow<[Q]>,
+        Q: Borrow<D>,
+        D: DieLike<T>,
+        O: Value,
+        F: Fn(&[&T]) -> O,
+    {
+        let dice = dice.borrow();
+        let mut map = Map::new();
+        let mut value = Vec::with_capacity(dice.len());
+
+        for p in dice
+            .iter()
+            .map(|x| {
+                let x = x.borrow();
+                x.values().iter().zip(x.outcomes())
+            })
+            .multi_cartesian_product()
+        {
+            value.clear();
+            let mut outcome: Outcome = 1;
+            for (v, o) in p {
+                value.push(v);
+                outcome *= o;
+            }
+            let o = map.entry(f(value.as_slice())).or_default();
+            *o += outcome;
+        }
+
+        DieInner::from_map(
+            map,
+            dice.iter().fold(1 as Outcome, |mut acc, x| {
+                acc *= x.borrow().denom();
+                acc
+            }),
+        )
+    }
+
+    #[must_use]
+    pub fn combine<I, Q, D>(dice: I) -> DieInner<Vec<T>>
+    where
+        I: Borrow<[Q]>,
+        Q: Borrow<D>,
+        D: DieLike<T>,
+    {
+        let dice = dice.borrow();
+        let total_len = Self::iterations_of(&dice).expect("iteration overflow");
+        let denom = Self::denom_of(&dice).expect("denominator overflow");
+        let value_len = dice.len();
+
+        let mut values = Vec::with_capacity(total_len);
+        let mut outcomes = Vec::with_capacity(total_len);
+
+        for p in dice
+            .iter()
+            .map(|x| {
+                let x = x.borrow();
+                x.values().iter().zip(x.outcomes())
+            })
+            .multi_cartesian_product()
+        {
+            let mut value = Vec::with_capacity(value_len);
+            let mut outcome: Outcome = 1;
+            for (v, o) in p {
+                value.push(v.clone());
+                outcome *= o;
+            }
+            values.push(value);
+            outcomes.push(outcome);
+        }
+
+        DieInner {
+            denom,
+            outcomes,
+            values,
+        }
+    }
+
+    #[must_use]
+    fn fold<F>(&self, n: usize, f: F) -> Self
+    where
+        F: Fn(&T, &T) -> T + Clone + Copy,
+    {
+        let mut die = self.apply_two(self, f);
+        for _ in 0..n.saturating_sub(2) {
+            die = die.apply_two(self, f);
+        }
+
+        die
+    }
+
+    #[must_use]
+    fn fold_assoc<F>(&self, n: usize, f: F) -> Self
+    where
+        F: Fn(&T, &T) -> T + Clone + Copy,
+    {
+        let mut cache = HashMap::new();
+        cache.insert(2, self.apply_two(self, f));
+
+        let mut stack = vec![n];
+        while let Some(&x) = stack.last() {
+            if x % 2 == 0 {
+                let m = x / 2;
+                if let Some(d) = cache.get(&m) {
+                    cache.insert(x, d.apply_two(d, f));
+                    stack.pop();
+                } else {
+                    stack.push(m);
+                }
+            } else {
+                let m = x - 1;
+                if let Some(d) = cache.get(&m) {
+                    cache.insert(x, d.apply_two(self, f));
+                    stack.pop();
+                } else {
+                    stack.push(m);
+                }
+            }
+        }
+
+        cache.remove(&n).expect("nth repeat to be calculated")
+    }
+
+    #[must_use]
+    pub fn modes(&self) -> Vec<&T> {
+        self.values
+            .iter()
+            .zip(&self.outcomes)
+            .max_set_by_key(|(_, o)| **o)
+            .into_iter()
+            .map(|(v, _)| v)
+            .collect()
+    }
+
+    #[must_use]
+    pub fn mode(&self) -> Option<&T> {
+        self.values
+            .iter()
+            .zip(&self.outcomes)
+            .max_by_key(|(_, o)| **o)
+            .map(|(v, _)| v)
+    }
+
+    fn denom_of<I, Q, D>(dice: &I) -> Option<Outcome>
+    where
+        I: Borrow<[Q]>,
+        Q: Borrow<D>,
+        D: DieLike<T>,
     {
         dice.borrow()
             .iter()
-            .try_fold(1 as Value, |acc, x| acc.checked_mul(x.borrow().denom))
+            .try_fold(1 as Outcome, |acc, x| acc.checked_mul(x.borrow().denom()))
     }
 
-    fn iterations_of<L, D>(dice: &L) -> Option<usize>
+    fn iterations_of<I, Q, D>(dice: &I) -> Option<usize>
     where
-        L: Borrow<[D]>,
-        D: Borrow<Self>,
+        I: Borrow<[Q]>,
+        Q: Borrow<D>,
+        D: DieLike<T>,
     {
         dice.borrow()
             .iter()
-            .try_fold(1usize, |acc, x| acc.checked_mul(x.borrow().keys.len()))
+            .try_fold(1usize, |acc, x| acc.checked_mul(x.borrow().values().len()))
     }
 }
 
-impl IntoIterator for Die {
-    type Item = (Key, Value);
-    type IntoIter = IntoIter;
+impl<T> DieInner<T>
+where
+    T: ComputableValue,
+{
+    #[must_use]
+    pub fn mean(&self) -> f64 {
+        self.mean_computed(self.values.iter().map(|x| x.compute()))
+    }
 
-    fn into_iter(self) -> Self::IntoIter {
-        self.keys.into_iter().zip(self.outcomes)
+    #[must_use]
+    pub fn variance(&self) -> f64 {
+        let computed = self.compute();
+        let mean = self.mean_computed(computed.iter());
+
+        computed
+            .iter()
+            .zip(&self.outcomes)
+            .fold(0.0, |mut acc, (value, outcome)| {
+                acc += (*value - mean).powi(2) * (*outcome as f64);
+                acc
+            })
+            / (self.denom as f64)
+    }
+
+    fn compute(&self) -> Vec<f64> {
+        self.values.iter().map(|x| x.compute()).collect()
+    }
+
+    fn mean_computed<I, F>(&self, computed: I) -> f64
+    where
+        I: Iterator<Item = F>,
+        F: Borrow<f64>,
+    {
+        computed
+            .zip(&self.outcomes)
+            .fold(0.0, |mut acc, (value, outcome)| {
+                acc += value.borrow() * (*outcome as f64);
+                acc
+            })
+            / (self.denom as f64)
     }
 }
 
-impl<'a> IntoIterator for &'a Die {
-    type Item = (&'a Key, &'a Value);
-    type IntoIter = Iter<'a>;
+impl<T> DieLike<T> for DieInner<T>
+where
+    T: Value,
+{
+    fn denom(&self) -> Outcome {
+        self.denom
+    }
+    fn values(&self) -> &[T] {
+        &self.values
+    }
+
+    fn outcomes(&self) -> &[Outcome] {
+        &self.outcomes
+    }
+}
+
+impl<'a, T> IntoIterator for &'a Die<T>
+where
+    T: Value + 'static,
+{
+    type Item = (&'a T, &'a Outcome);
+    type IntoIter = Iter<'a, T>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.iter()
     }
+}
+
+#[inline]
+fn gcd(mut m: u128, mut n: u128) -> u128 {
+    // Use Stein's algorithm
+    if m == 0 || n == 0 {
+        return m | n;
+    }
+
+    // find common factors of 2
+    let shift = (m | n).trailing_zeros();
+
+    // divide n and m by 2 until odd
+    m >>= m.trailing_zeros();
+    n >>= n.trailing_zeros();
+
+    while m != n {
+        if m > n {
+            m -= n;
+            m >>= m.trailing_zeros();
+        } else {
+            n -= m;
+            n >>= n.trailing_zeros();
+        }
+    }
+    m << shift
 }
