@@ -5,6 +5,7 @@ use comfy_table::{Cell, ContentArrangement, Table};
 use modron::{ComputableValue, Die};
 use plotters::chart::ChartBuilder;
 use plotters::coord::Shift;
+use plotters::evcxr::{evcxr_figure, SVGWrapper};
 use plotters::prelude::{
     Circle, DrawingArea, DrawingAreaErrorKind, DrawingBackend, EmptyElement, IntoSegmentedCoord,
 };
@@ -20,12 +21,21 @@ const MAX_X_LABELS: usize = 45;
 
 pub trait PrintExt {
     fn table(&self) -> String;
+
+    fn plot<DB>(&self, area: DrawingArea<DB, Shift>) -> HistResult<DB>
+    where
+        DB: DrawingBackend;
+
     fn print_table(&self) {
         print!("{}", self.table());
     }
-    fn hist<DB>(&self, area: DrawingArea<DB, Shift>) -> HistResult<DB>
-    where
-        DB: DrawingBackend;
+
+    fn evcxr_plot(&self) -> SVGWrapper {
+        evcxr_figure((640, 480), |area| {
+            self.plot(area)?;
+            Ok(())
+        })
+    }
 }
 
 impl<T> PrintExt for Die<T>
@@ -53,7 +63,7 @@ where
         format!("Среднее: {mean:.3}±{stddev:.3} | Исходы: {denom}\n\n{table}\n")
     }
 
-    fn hist<DB>(&self, area: DrawingArea<DB, Shift>) -> HistResult<DB>
+    fn plot<DB>(&self, area: DrawingArea<DB, Shift>) -> HistResult<DB>
     where
         DB: DrawingBackend,
     {
