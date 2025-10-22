@@ -1,5 +1,5 @@
-pub mod daggerheart;
 mod defs;
+pub mod dh;
 pub mod dnd;
 mod print;
 

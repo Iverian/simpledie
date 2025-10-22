@@ -126,8 +126,10 @@ pub fn dual() -> Die<Duality> {
 #[derive(Builder, Clone, Debug)]
 #[builder(finish_fn(name = "options", vis = ""))]
 pub struct ActionRoll {
-    #[builder(start_fn)]
+    #[builder(default = 10)]
     pub difficulty: i32,
+    #[builder(default = dual())]
+    pub die: Die<Duality>,
     #[builder(default = 0)]
     pub bonus: DefaultValue,
     #[builder(default = false)]
@@ -138,8 +140,10 @@ pub struct ActionRoll {
 #[derive(Builder, Clone, Debug)]
 #[builder(finish_fn(name = "options", vis = ""))]
 pub struct ReactionRoll {
-    #[builder(start_fn)]
+    #[builder(default = 10)]
     pub difficulty: i32,
+    #[builder(default = dual())]
+    pub die: Die<Duality>,
     #[builder(default = 0)]
     pub bonus: DefaultValue,
     pub modifier: Option<ExtMod>,
@@ -150,8 +154,10 @@ pub struct ReactionRoll {
 pub struct AttackRoll {
     #[builder(start_fn)]
     pub dmg_die: Die,
-    #[builder(start_fn)]
+    #[builder(default = 10)]
     pub difficulty: i32,
+    #[builder(default = dual())]
+    pub die: Die<Duality>,
     #[builder(default = 0)]
     pub dmg_bonus: DefaultValue,
     #[builder(default = 1)]
@@ -166,10 +172,10 @@ pub struct AttackRoll {
 impl ActionRoll {
     pub fn eval(self) -> Die<ActionRollResult> {
         match (self.help, self.modifier) {
-            (true, Some(ExtMod::Adv)) => dual() + d6().nmax(2),
-            (true, None) | (false, Some(ExtMod::Adv)) => dual() + d6(),
-            (true, Some(ExtMod::Dis)) | (false, None) => dual(),
-            (false, Some(ExtMod::Dis)) => dual() - d6(),
+            (true, Some(ExtMod::Adv)) => self.die + d6().nmax(2),
+            (true, None) | (false, Some(ExtMod::Adv)) => self.die + d6(),
+            (true, Some(ExtMod::Dis)) | (false, None) => self.die,
+            (false, Some(ExtMod::Dis)) => self.die - d6(),
         }
         .map(|&a| match a {
             Duality::Fear(x) => {
@@ -204,8 +210,8 @@ where
 impl ReactionRoll {
     pub fn eval(self) -> Die<bool> {
         match self.modifier {
-            Some(ExtMod::Adv) => dual() + d6(),
-            Some(ExtMod::Dis) => dual() - d6(),
+            Some(ExtMod::Adv) => self.die + d6(),
+            Some(ExtMod::Dis) => self.die - d6(),
             None => dual(),
         }
         .map(|&a| match a {
@@ -222,6 +228,7 @@ impl AttackRoll {
         let crit_bonus = dmg_die.max_value();
 
         ActionRoll {
+            die: self.die,
             difficulty: self.difficulty,
             bonus: self.bonus,
             help: self.help,
