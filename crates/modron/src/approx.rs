@@ -59,8 +59,6 @@ where
         T: Value,
         F: FnMut(&mut G) -> T,
     {
-        println!("approximating with {} iterations", self.sample_size);
-
         let mut map = Map::new();
 
         for _ in 0..self.sample_size {
