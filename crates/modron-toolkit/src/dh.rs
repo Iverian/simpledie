@@ -18,7 +18,7 @@ pub enum Duality {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum ActionRollResult {
+pub enum Action {
     FailureWithFear,
     SuccessWithFear,
     FailureWithHope,
@@ -65,26 +65,26 @@ impl Display for Duality {
     }
 }
 
-impl ComputableValue for ActionRollResult {
+impl ComputableValue for Action {
     fn compute(&self) -> i128 {
         match self {
-            ActionRollResult::FailureWithFear => -2,
-            ActionRollResult::SuccessWithFear => 1,
-            ActionRollResult::FailureWithHope => -1,
-            ActionRollResult::SuccessWithHope => 2,
-            ActionRollResult::Critical => 3,
+            Action::FailureWithFear => -2,
+            Action::SuccessWithFear => 1,
+            Action::FailureWithHope => -1,
+            Action::SuccessWithHope => 2,
+            Action::Critical => 3,
         }
     }
 }
 
-impl Display for ActionRollResult {
+impl Display for Action {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ActionRollResult::FailureWithFear => write!(f, "FF"),
-            ActionRollResult::SuccessWithFear => write!(f, "SF"),
-            ActionRollResult::FailureWithHope => write!(f, "FH"),
-            ActionRollResult::SuccessWithHope => write!(f, "SH"),
-            ActionRollResult::Critical => write!(f, "C"),
+            Action::FailureWithFear => write!(f, "FF"),
+            Action::SuccessWithFear => write!(f, "SF"),
+            Action::FailureWithHope => write!(f, "FH"),
+            Action::SuccessWithHope => write!(f, "SH"),
+            Action::Critical => write!(f, "C"),
         }
     }
 }
@@ -170,7 +170,7 @@ pub struct AttackRoll {
 }
 
 impl ActionRoll {
-    pub fn eval(self) -> Die<ActionRollResult> {
+    pub fn eval(self) -> Die<Action> {
         match (self.help, self.modifier) {
             (true, Some(ExtMod::Adv)) => self.die + d6().nmax(2),
             (true, None) | (false, Some(ExtMod::Adv)) => self.die + d6(),
@@ -180,19 +180,19 @@ impl ActionRoll {
         .map(|&a| match a {
             Duality::Fear(x) => {
                 if x + self.bonus >= self.difficulty {
-                    ActionRollResult::SuccessWithFear
+                    Action::SuccessWithFear
                 } else {
-                    ActionRollResult::FailureWithFear
+                    Action::FailureWithFear
                 }
             }
             Duality::Hope(x) => {
                 if x + self.bonus >= self.difficulty {
-                    ActionRollResult::SuccessWithHope
+                    Action::SuccessWithHope
                 } else {
-                    ActionRollResult::SuccessWithFear
+                    Action::SuccessWithFear
                 }
             }
-            Duality::Critical => ActionRollResult::Critical,
+            Duality::Critical => Action::Critical,
         })
     }
 }
@@ -202,7 +202,7 @@ where
     S: action_roll_builder::State,
     S: action_roll_builder::IsComplete,
 {
-    pub fn eval(self) -> Die<ActionRollResult> {
+    pub fn eval(self) -> Die<Action> {
         self.options().eval()
     }
 }
@@ -236,11 +236,9 @@ impl AttackRoll {
         }
         .eval()
         .apply_two(&dmg_die, |&atk, &dmg| match atk {
-            ActionRollResult::FailureWithHope | ActionRollResult::FailureWithFear => 0,
-            ActionRollResult::SuccessWithHope | ActionRollResult::SuccessWithFear => {
-                dmg + self.dmg_bonus
-            }
-            ActionRollResult::Critical => dmg + self.dmg_bonus + crit_bonus,
+            Action::FailureWithHope | Action::FailureWithFear => 0,
+            Action::SuccessWithHope | Action::SuccessWithFear => dmg + self.dmg_bonus,
+            Action::Critical => dmg + self.dmg_bonus + crit_bonus,
         })
     }
 }
