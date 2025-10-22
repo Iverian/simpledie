@@ -10,7 +10,7 @@ use std::sync::Arc;
 pub use approx::Approx;
 pub use die::Die;
 use thiserror::Error;
-pub use value::{ComputableValue, DefaultValue, OrderedValue, Value};
+pub use value::{ComputableValue, ComputedValue, DefaultValue, OrderedValue, Value};
 
 type Outcome = u128;
 type Map<T> = BTreeMap<T, Outcome>;

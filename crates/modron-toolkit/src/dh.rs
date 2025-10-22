@@ -3,7 +3,7 @@ use std::ops::{Add, Sub};
 use std::sync::LazyLock;
 
 use bon::Builder;
-use modron::{ComputableValue, DefaultValue, Die};
+use modron::{ComputableValue, ComputedValue, DefaultValue, Die};
 
 use crate::{d6, D12};
 
@@ -46,7 +46,7 @@ impl Duality {
 }
 
 impl ComputableValue for Duality {
-    fn compute(&self) -> i128 {
+    fn compute(&self) -> ComputedValue {
         match self {
             Duality::Fear(x) => -x.compute(),
             Duality::Hope(x) => x.compute(),
@@ -66,7 +66,7 @@ impl Display for Duality {
 }
 
 impl ComputableValue for Action {
-    fn compute(&self) -> i128 {
+    fn compute(&self) -> ComputedValue {
         match self {
             Action::FailureWithFear => -2,
             Action::SuccessWithFear => 1,

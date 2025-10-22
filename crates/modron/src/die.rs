@@ -7,7 +7,7 @@ use std::{slice, vec};
 use itertools::Itertools;
 use rand::{rng, Rng, RngCore};
 
-use crate::value::{ComputableValue, DefaultValue, Value};
+use crate::value::{ComputableValue, ComputedValue, DefaultValue, Value};
 use crate::{Approx, Error, Map, Outcome, Ptr, Result, DIRECT_MAX_ITERATIONS};
 
 pub type Iter<'a, T> = Zip<slice::Iter<'a, T>, slice::Iter<'a, Outcome>>;
@@ -315,7 +315,7 @@ where
     }
 
     #[must_use]
-    pub fn computed_values(&self) -> Vec<i128> {
+    pub fn computed_values(&self) -> Vec<ComputedValue> {
         self.0.computed_values()
     }
 }
@@ -977,7 +977,7 @@ where
     }
 
     #[must_use]
-    fn computed_values(&self) -> Vec<i128> {
+    fn computed_values(&self) -> Vec<ComputedValue> {
         self.values.iter().map(|x| x.compute()).collect()
     }
 
