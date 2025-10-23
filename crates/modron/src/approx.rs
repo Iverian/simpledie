@@ -50,7 +50,7 @@ where
         T: Value,
         F: FnMut(&mut G) -> T,
     {
-        Die::from_inner(self.eval_inner(op))
+        Die::new(self.eval_inner(op))
     }
 
     #[must_use]
@@ -67,6 +67,6 @@ where
             *e += 1;
         }
 
-        DieInner::from_map(map, self.sample_size as Outcome)
+        DieInner::new(map, self.sample_size as Outcome)
     }
 }
