@@ -119,7 +119,7 @@ where
         O: Value,
         F: Fn(&T) -> O,
     {
-        Die(Ptr::new(self.0.map(f)))
+        Die::new(self.0.map(f))
     }
 
     #[must_use]
@@ -129,7 +129,7 @@ where
         O: Value,
         F: Fn(&T, &R) -> O,
     {
-        Die(Ptr::new(self.0.apply_two(&rhs.0, f)))
+        Die::new(self.0.apply_two(&rhs.0, f))
     }
 
     #[must_use]
@@ -140,7 +140,7 @@ where
         O: Value,
         F: Fn(&T, &T2, &T3) -> O,
     {
-        Die(Ptr::new(self.0.apply_three(&d2.0, &d3.0, f)))
+        Die::new(self.0.apply_three(&d2.0, &d3.0, f))
     }
 
     #[must_use]
