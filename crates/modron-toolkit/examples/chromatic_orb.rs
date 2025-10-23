@@ -5,12 +5,10 @@ use modron_toolkit::*;
 fn main() {
     let level = 5;
     let targets = 6;
-    let atk_die = dnd::AttackRoll::builder()
-        .die(dnd::adv())
+    let atk_die = dnd::AttackRoll::new()
         .armor_class(15)
         .ability_bonus(5)
         .proficiency(4)
-        .build()
         .eval();
 
     let values = chromatic_orb_mean(&atk_die, level, targets);
@@ -22,19 +20,19 @@ fn main() {
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Eq, Ord)]
 struct OrbRaw {
-    dmg: i32,
+    dmg: DefaultValue,
     bounce: bool,
     values: u8,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, PartialOrd, Eq, Ord)]
 struct Orb {
-    dmg: Vec<i32>,
+    dmg: Vec<DefaultValue>,
     bounce: bool,
 }
 
 impl OrbRaw {
-    fn new(dice: &[&i32]) -> Self {
+    fn new(dice: &[&DefaultValue]) -> Self {
         let mut dmg = 0;
         let mut values = 0;
         let mut bits = 0;
@@ -91,12 +89,12 @@ fn bitmatch(lhs: u8, rhs: u8) -> bool {
     false
 }
 
-fn chromatic_orb_dmg(level: u16) -> Die<OrbRaw> {
-    let n = 2 + level as usize;
+fn chromatic_orb_dmg(level: usize) -> Die<OrbRaw> {
+    let n = 2 + level;
     Die::apply(vec![d8(); n], OrbRaw::new)
 }
 
-fn chromatic_orb_one(atk_die: &Die<dnd::Attack>, level: u16) -> Die<Orb> {
+fn chromatic_orb_one(atk_die: &Die<dnd::Attack>, level: usize) -> Die<Orb> {
     let dmg_die = chromatic_orb_dmg(level);
     atk_die.apply_three(&dmg_die, &dmg_die, |&atk, dmg, crit| match atk {
         dnd::Attack::Critical => dmg.critical(crit),
@@ -105,7 +103,7 @@ fn chromatic_orb_one(atk_die: &Die<dnd::Attack>, level: u16) -> Die<Orb> {
     })
 }
 
-fn chromatic_orb(atk_die: &Die<dnd::Attack>, level: u16, targets: u16) -> Die<Vec<i32>> {
+fn chromatic_orb(atk_die: &Die<dnd::Attack>, level: usize, targets: usize) -> Die<Vec<i32>> {
     let targets = targets.clamp(1, 1 + level);
     chromatic_orb_one(atk_die, level)
         .explode_one(targets, |x| x.last().unwrap().bounce, |x, y| x.append(y))
@@ -113,17 +111,17 @@ fn chromatic_orb(atk_die: &Die<dnd::Attack>, level: u16, targets: u16) -> Die<Ve
             x.dmg
                 .iter()
                 .copied()
-                .chain(repeat_n(0, targets as usize - x.dmg.len()))
+                .chain(repeat_n(0, targets - x.dmg.len()))
                 .collect()
         })
 }
 
-fn chromatic_orb_mean(atk_die: &Die<dnd::Attack>, level: u16, targets: u16) -> Vec<(f64, f64)> {
+fn chromatic_orb_mean(atk_die: &Die<dnd::Attack>, level: usize, targets: usize) -> Vec<(f64, f64)> {
     let targets = targets.clamp(1, 1 + level);
     let die = chromatic_orb(atk_die, level, targets);
-    let mut result = Vec::with_capacity(targets as usize);
+    let mut result = Vec::with_capacity(targets);
     for t in 0..targets {
-        let d = die.map(|x| x[t as usize]);
+        let d = die.map(|x| x[t]);
         result.push((d.mean(), d.stddev()));
     }
     result

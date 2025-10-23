@@ -16,6 +16,7 @@ pub enum Attack {
 }
 
 #[derive(Builder, Debug, Clone)]
+#[builder(start_fn(name = "new"), finish_fn(vis = ""))]
 pub struct AttackRoll {
     #[builder(default = 10)]
     armor_class: DefaultValue,
@@ -33,6 +34,7 @@ pub struct AttackRoll {
 }
 
 #[derive(Builder, Debug, Clone)]
+#[builder(start_fn(name = "new"), finish_fn(vis = ""))]
 pub struct WeaponDamageRoll {
     #[builder(start_fn)]
     dmg_die: Die,
@@ -69,6 +71,16 @@ impl AttackRoll {
     }
 }
 
+impl<S> AttackRollBuilder<S>
+where
+    S: attack_roll_builder::State,
+    S: attack_roll_builder::IsComplete,
+{
+    pub fn eval(self) -> Die<Attack> {
+        self.build().eval()
+    }
+}
+
 impl WeaponDamageRoll {
     pub fn eval(self) -> Die {
         let dmg_bonus = self.ability_bonus + self.dmg_bonus + self.weapon_bonus;
@@ -91,6 +103,16 @@ impl WeaponDamageRoll {
                 Attack::Miss => 0,
             },
         )
+    }
+}
+
+impl<S> WeaponDamageRollBuilder<S>
+where
+    S: weapon_damage_roll_builder::State,
+    S: weapon_damage_roll_builder::IsComplete,
+{
+    pub fn eval(self) -> Die {
+        self.build().eval()
     }
 }
 

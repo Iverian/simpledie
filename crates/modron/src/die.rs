@@ -8,7 +8,9 @@ use itertools::Itertools;
 use rand::{rng, Rng, RngCore};
 
 use crate::value::{ComputableValue, ComputedValue, DefaultValue, Value};
-use crate::{Approx, Error, Map, Outcome, Ptr, Result, DIRECT_MAX_ITERATIONS};
+use crate::{
+    Approx, Error, Map, Outcome, Ptr, Result, DIRECT_MAX_ITERATIONS, MAX_EXPLODE, MIN_EXPLODE,
+};
 
 pub type Iter<'a, T> = Zip<slice::Iter<'a, T>, slice::Iter<'a, Outcome>>;
 
@@ -265,23 +267,31 @@ where
     }
 
     #[must_use]
-    pub fn explode<P, F>(&self, min: u16, max: u16, predicate: P, fold: F) -> Self
+    pub fn explode<P, F>(&self, min: usize, max: usize, predicate: P, fold: F) -> Self
     where
         P: Fn(&[&T]) -> bool,
         F: Fn(&T, &T) -> T,
     {
-        if max == 0 {
-            return Self::zero();
+        if !(MIN_EXPLODE..=MAX_EXPLODE).contains(&min) {
+            panic!("min explode out of range");
+        }
+        if !(MIN_EXPLODE..=MAX_EXPLODE).contains(&max) {
+            panic!("max explode out of range");
         }
         if max == 1 {
             return self.clone();
         }
 
-        Self(Ptr::new(self.0.explode(min, max, predicate, fold)))
+        Self(Ptr::new(self.0.explode(
+            min.clamp(1, max),
+            max,
+            predicate,
+            fold,
+        )))
     }
 
     #[must_use]
-    pub fn explode_one<P, F>(&self, max: u16, predicate: P, fold: F) -> Self
+    pub fn explode_one<P, F>(&self, max: usize, predicate: P, fold: F) -> Self
     where
         P: Fn(&[&T]) -> bool,
         F: Fn(&T, &T) -> T,
@@ -413,7 +423,7 @@ where
     fn probabilities(&self) -> Vec<f64> {
         self.outcomes
             .iter()
-            .map(|x| *x as f64 / self.denom as f64)
+            .map(|x| (*x as f64) / self.denom as f64)
             .collect_vec()
     }
 
@@ -827,7 +837,7 @@ where
     }
 
     #[must_use]
-    fn explode<P, F>(&self, min: u16, max: u16, p: P, f: F) -> Self
+    fn explode<P, F>(&self, min: usize, max: usize, predicate: P, fold: F) -> Self
     where
         P: Fn(&[&T]) -> bool,
         F: Fn(&T, &T) -> T,
@@ -835,18 +845,18 @@ where
         let iter = self.values.len().checked_pow(max as u32);
         let denom = self.denom.checked_pow(max as u32);
         match Strategy::select(iter, denom) {
-            Strategy::Direct(denom) => self.explode_direct(denom, min, max, p, f),
-            Strategy::Approx => self.explode_approx(min, max, p, f),
+            Strategy::Direct(denom) => self.explode_direct(denom, min, max, predicate, fold),
+            Strategy::Approx => self.explode_approx(min, max, predicate, fold),
         }
     }
 
     #[must_use]
-    fn explode_approx<P, F>(&self, min: u16, max: u16, p: P, f: F) -> Self
+    fn explode_approx<P, F>(&self, min: usize, max: usize, p: P, f: F) -> Self
     where
         P: Fn(&[&T]) -> bool,
         F: Fn(&T, &T) -> T,
     {
-        let mut value = Vec::with_capacity(max as usize);
+        let mut value = Vec::with_capacity(max);
         Approx::default().eval_inner(|rng| {
             value.clear();
             value.push(self.sample_rng(rng));
@@ -869,7 +879,14 @@ where
     }
 
     #[must_use]
-    fn explode_direct<P, F>(&self, denom: Outcome, min: u16, max: u16, p: P, f: F) -> Self
+    fn explode_direct<P, F>(
+        &self,
+        denom: Outcome,
+        min: usize,
+        max: usize,
+        predicate: P,
+        fold: F,
+    ) -> Self
     where
         P: Fn(&[&T]) -> bool,
         F: Fn(&T, &T) -> T,
@@ -877,12 +894,12 @@ where
         let m = self.values.len();
         let mut map = Map::new();
 
-        let dice = Self::combine::<_, _, Self>(vec![self; min as usize]).unwrap();
+        let dice = Self::combine::<_, _, Self>(vec![self; min]).unwrap();
         let mut items = dice
             .values
             .iter()
             .zip(dice.outcomes)
-            .map(|(v, o)| (fold_with(v, &f), v.iter().collect_vec(), o))
+            .map(|(v, o)| (fold_with(v, &fold), v.iter().collect_vec(), o))
             .collect_vec();
 
         for i in (min + 1)..=max {
@@ -894,11 +911,11 @@ where
 
                 for (v2, o2) in self.iter() {
                     let outcome = o1 * *o2;
-                    let mut value = Vec::with_capacity(i as usize);
+                    let mut value = Vec::with_capacity(i);
                     value.extend(v1.iter().copied());
                     value.push(v2);
-                    if p(&value) {
-                        new_items.push((f(&r1, v2), value, outcome));
+                    if predicate(&value) {
+                        new_items.push((fold(&r1, v2), value, outcome));
                     } else {
                         negative_outcome += outcome;
                     }
@@ -965,10 +982,9 @@ where
             .iter()
             .zip(&self.outcomes)
             .fold(0.0, |mut acc, (value, outcome)| {
-                acc += (*value - mean).powi(2) * (*outcome as f64);
+                acc += (*value - mean).powi(2) * (*outcome as f64) / (self.denom as f64);
                 acc
             })
-            / (self.denom as f64)
     }
 
     #[must_use]
@@ -993,10 +1009,9 @@ where
         computed
             .zip(&self.outcomes)
             .fold(0.0, |mut acc, (value, outcome)| {
-                acc += value.borrow() * (*outcome as f64);
+                acc += value.borrow() * (*outcome as f64) / (self.denom as f64);
                 acc
             })
-            / (self.denom as f64)
     }
 }
 

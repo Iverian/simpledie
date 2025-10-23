@@ -124,7 +124,7 @@ pub fn dual() -> Die<Duality> {
 }
 
 #[derive(Builder, Clone, Debug)]
-#[builder(finish_fn(name = "options", vis = ""))]
+#[builder(start_fn(name = "new"), finish_fn(vis = ""))]
 pub struct ActionRoll {
     #[builder(default = 10)]
     pub difficulty: i32,
@@ -138,7 +138,7 @@ pub struct ActionRoll {
 }
 
 #[derive(Builder, Clone, Debug)]
-#[builder(finish_fn(name = "options", vis = ""))]
+#[builder(start_fn(name = "new"), finish_fn(vis = ""))]
 pub struct ReactionRoll {
     #[builder(default = 10)]
     pub difficulty: i32,
@@ -150,12 +150,12 @@ pub struct ReactionRoll {
 }
 
 #[derive(Builder, Clone, Debug)]
-#[builder(finish_fn(name = "options", vis = ""))]
-pub struct AttackRoll {
+#[builder(start_fn(name = "new"), finish_fn(vis = ""))]
+pub struct AttackDamageRoll {
     #[builder(start_fn)]
     pub dmg_die: Die,
     #[builder(default = 10)]
-    pub difficulty: i32,
+    pub difficulty: DefaultValue,
     #[builder(default = dual())]
     pub die: Die<Duality>,
     #[builder(default = 0)]
@@ -203,7 +203,7 @@ where
     S: action_roll_builder::IsComplete,
 {
     pub fn eval(self) -> Die<Action> {
-        self.options().eval()
+        self.build().eval()
     }
 }
 
@@ -222,7 +222,7 @@ impl ReactionRoll {
     }
 }
 
-impl AttackRoll {
+impl AttackDamageRoll {
     pub fn eval(self) -> Die {
         let dmg_die = self.proficiency * self.dmg_die;
         let crit_bonus = dmg_die.max_value();
@@ -243,12 +243,12 @@ impl AttackRoll {
     }
 }
 
-impl<S> AttackRollBuilder<S>
+impl<S> AttackDamageRollBuilder<S>
 where
-    S: attack_roll_builder::State,
-    S: attack_roll_builder::IsComplete,
+    S: attack_damage_roll_builder::State,
+    S: attack_damage_roll_builder::IsComplete,
 {
     pub fn eval(self) -> Die {
-        self.options().eval()
+        self.build().eval()
     }
 }

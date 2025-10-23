@@ -22,3 +22,5 @@ type Result<T> = ::core::result::Result<T, Error>;
 pub struct Error;
 
 const DIRECT_MAX_ITERATIONS: usize = 100_000_000_000;
+const MIN_EXPLODE: usize = 1;
+const MAX_EXPLODE: usize = 10;
