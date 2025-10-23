@@ -10,14 +10,14 @@ use crate::{d6, D12};
 pub static DUAL: LazyLock<Die<Duality>> =
     LazyLock::new(|| D12.apply_two(&D12, |&h, &f| Duality::new(h, f)));
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Duality {
     Fear(DefaultValue),
     Hope(DefaultValue),
     Critical,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Action {
     FailureWithFear,
     SuccessWithFear,
@@ -26,7 +26,7 @@ pub enum Action {
     Critical,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ExtMod {
     Adv,
     Dis,

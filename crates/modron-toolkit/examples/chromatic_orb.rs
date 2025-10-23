@@ -5,8 +5,7 @@ use modron_toolkit::*;
 fn main() {
     let level = 5;
     let targets = 6;
-    let atk_die = dnd::AttackRoll::new()
-        .armor_class(15)
+    let atk_die = dnd::AttackRoll::new(15)
         .ability_bonus(5)
         .proficiency(4)
         .eval();
@@ -14,18 +13,18 @@ fn main() {
     let values = chromatic_orb_mean(&atk_die, level, targets);
     println!("Chromatic orb Lv.{level} to {targets} targets");
     for (target, (mean, stddev)) in values.into_iter().enumerate() {
-        println!("{:3} | {:.2} pm {:.2}", target + 1, mean, stddev);
+        println!("{:3} | {:.2} ± {:.2}", target + 1, mean, stddev);
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Eq, Ord, Hash)]
 struct OrbRaw {
     dmg: DefaultValue,
     bounce: bool,
     values: u8,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Clone, Debug, Default, PartialEq, PartialOrd, Eq, Ord, Hash)]
 struct Orb {
     dmg: Vec<DefaultValue>,
     bounce: bool,

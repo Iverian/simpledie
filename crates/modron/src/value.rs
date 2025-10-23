@@ -1,10 +1,14 @@
 use std::cmp::Ordering;
 use std::fmt::Debug;
+use std::hash::Hash;
 
 pub type DefaultValue = i32;
 pub type ComputedValue = i64;
 
-pub trait Value: Sized + Send + Sync + Debug + Clone + PartialEq + Eq + PartialOrd + Ord {}
+pub trait Value:
+    Sized + Send + Sync + Debug + Clone + PartialEq + Eq + PartialOrd + Ord + Hash
+{
+}
 
 pub trait OrderedValue: PartialOrd + Ord + Value {}
 
@@ -26,7 +30,10 @@ macro_rules! impl_computable_value_from {
     };
 }
 
-impl<T> Value for T where T: Sized + Send + Sync + Debug + Clone + PartialEq + Eq + PartialEq + Ord {}
+impl<T> Value for T where
+    T: Sized + Send + Sync + Debug + Clone + PartialEq + Eq + PartialEq + Ord + Hash
+{
+}
 
 impl<T> OrderedValue for T where T: Value + PartialOrd + Ord {}
 

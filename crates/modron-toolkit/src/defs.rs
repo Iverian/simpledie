@@ -2,7 +2,7 @@ use std::sync::LazyLock;
 
 use modron::Die;
 
-pub static D0: LazyLock<Die> = LazyLock::new(Die::zero);
+pub static ZERO: LazyLock<Die> = LazyLock::new(|| Die::scalar(0));
 pub static D1: LazyLock<Die> = LazyLock::new(|| Die::scalar(1));
 pub static D2: LazyLock<Die> = LazyLock::new(|| Die::numeric(2));
 pub static D3: LazyLock<Die> = LazyLock::new(|| Die::numeric(3));
@@ -14,8 +14,8 @@ pub static D12: LazyLock<Die> = LazyLock::new(|| Die::numeric(12));
 pub static D20: LazyLock<Die> = LazyLock::new(|| Die::numeric(20));
 pub static D100: LazyLock<Die> = LazyLock::new(|| Die::numeric(100));
 
-pub fn d0() -> Die {
-    D0.clone()
+pub fn zero() -> Die {
+    ZERO.clone()
 }
 
 pub fn d1() -> Die {

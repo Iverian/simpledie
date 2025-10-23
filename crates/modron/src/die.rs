@@ -432,7 +432,7 @@ where
         let mut values = Vec::with_capacity(map.len());
         let mut outcomes = Vec::with_capacity(map.len());
         let mut acc = denom;
-        for (value, outcome) in map {
+        for (value, outcome) in map.into_iter().sorted_by(|(v1, _), (v2, _)| v1.cmp(v2)) {
             acc = gcd(acc, outcome);
             values.push(value);
             outcomes.push(outcome);

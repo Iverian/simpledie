@@ -3,12 +3,12 @@ use std::sync::LazyLock;
 use bon::Builder;
 use modron::{DefaultValue, Die};
 
-use crate::{d20, D20};
+use crate::{d20, zero, D20};
 
 pub static ADV: LazyLock<Die> = LazyLock::new(|| D20.nmax(2));
 pub static DIS: LazyLock<Die> = LazyLock::new(|| D20.nmin(2));
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Attack {
     Critical,
     Hit,
@@ -18,17 +18,17 @@ pub enum Attack {
 #[derive(Builder, Debug, Clone)]
 #[builder(start_fn(name = "new"), finish_fn(vis = ""))]
 pub struct AttackRoll {
-    #[builder(default = 10)]
+    #[builder(start_fn)]
     armor_class: DefaultValue,
     #[builder(default = d20())]
     die: Die,
-    atk_die: Option<Die>,
+    extra_die: Option<Die>,
     #[builder(default = 0)]
     ability_bonus: DefaultValue,
     #[builder(default = 0)]
     proficiency: DefaultValue,
     #[builder(default = 0)]
-    atk_bonus: DefaultValue,
+    bonus: DefaultValue,
     #[builder(default = 20)]
     critical_on: DefaultValue,
 }
@@ -37,12 +37,12 @@ pub struct AttackRoll {
 #[builder(start_fn(name = "new"), finish_fn(vis = ""))]
 pub struct WeaponDamageRoll {
     #[builder(start_fn)]
-    dmg_die: Die,
-    #[builder(default = 10)]
     armor_class: DefaultValue,
+    #[builder(start_fn)]
+    dmg_die: Die,
     #[builder(default = d20())]
     die: Die,
-    atk_die: Option<Die>,
+    extra_atk_die: Option<Die>,
     #[builder(default = 0)]
     ability_bonus: DefaultValue,
     #[builder(default = 0)]
@@ -57,11 +57,39 @@ pub struct WeaponDamageRoll {
     critical_on: DefaultValue,
 }
 
+#[derive(Builder, Debug, Clone)]
+#[builder(start_fn(name = "new"), finish_fn(vis = ""))]
+pub struct SavingThrow {
+    #[builder(start_fn)]
+    difficulty: DefaultValue,
+    #[builder(default = d20())]
+    die: Die,
+    extra_die: Option<Die>,
+    #[builder(default = 0)]
+    bonus: DefaultValue,
+}
+
+#[derive(Builder, Debug, Clone)]
+#[builder(start_fn(name = "new"), finish_fn(vis = ""))]
+pub struct SavingThrowDamage {
+    #[builder(start_fn)]
+    difficulty: DefaultValue,
+    #[builder(start_fn)]
+    dmg_die: Die,
+    half_dmg: bool,
+    #[builder(default = 1)]
+    targets: usize,
+    #[builder(default = d20())]
+    die: Die,
+    extra_die: Option<Die>,
+    save_bonus: DefaultValue,
+}
+
 impl AttackRoll {
     pub fn eval(self) -> Die<Attack> {
-        let atk_bonus = self.ability_bonus + self.proficiency + self.atk_bonus;
+        let atk_bonus = self.ability_bonus + self.proficiency + self.bonus;
         self.die.apply_two(
-            &self.atk_die.unwrap_or_else(|| Die::scalar(0)),
+            &self.extra_die.unwrap_or_else(zero),
             |&atk, &atk_extra| match atk {
                 x if x >= self.critical_on => Attack::Critical,
                 x if x + atk_extra + atk_bonus >= self.armor_class => Attack::Hit,
@@ -87,10 +115,10 @@ impl WeaponDamageRoll {
         AttackRoll {
             armor_class: self.armor_class,
             die: self.die,
-            atk_die: self.atk_die,
+            extra_die: self.extra_atk_die,
             ability_bonus: self.ability_bonus,
             proficiency: self.proficiency,
-            atk_bonus: self.atk_bonus + self.weapon_bonus,
+            bonus: self.atk_bonus + self.weapon_bonus,
             critical_on: self.critical_on,
         }
         .eval()
@@ -110,6 +138,59 @@ impl<S> WeaponDamageRollBuilder<S>
 where
     S: weapon_damage_roll_builder::State,
     S: weapon_damage_roll_builder::IsComplete,
+{
+    pub fn eval(self) -> Die {
+        self.build().eval()
+    }
+}
+
+impl SavingThrow {
+    pub fn eval(self) -> Die<bool> {
+        self.die
+            .apply_two(&self.extra_die.unwrap_or_else(zero), |&die, &extra| {
+                die + extra + self.bonus >= self.difficulty
+            })
+    }
+}
+
+impl<S> SavingThrowBuilder<S>
+where
+    S: saving_throw_builder::State,
+    S: saving_throw_builder::IsComplete,
+{
+    pub fn eval(self) -> Die<bool> {
+        self.build().eval()
+    }
+}
+
+impl SavingThrowDamage {
+    pub fn eval(self) -> Die {
+        SavingThrow {
+            difficulty: self.difficulty,
+            die: self.die,
+            extra_die: self.extra_die,
+            bonus: self.save_bonus,
+        }
+        .eval()
+        .apply_two(&self.dmg_die, |&save, &dmg| {
+            if save {
+                if self.half_dmg {
+                    dmg / 2
+                } else {
+                    0
+                }
+            } else {
+                dmg
+            }
+        })
+        .nsum(self.targets.max(1))
+    }
+}
+
+impl<S> SavingThrowDamageBuilder<S>
+where
+    S: saving_throw_damage_builder::State,
+    S: saving_throw_damage_builder::IsComplete,
 {
     pub fn eval(self) -> Die {
         self.build().eval()

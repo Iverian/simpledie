@@ -6,11 +6,10 @@ edition.workspace = true
 [dependencies]
 modron.workspace = true
 bon.workspace = true
+
 plotters = { version = "0.3.7", default-features = false, features = [
   "evcxr",
-  "area_series",
   "histogram",
-  "point_series",
 ] }
 comfy-table = { version = "7.2.1", default-features = false }
 

@@ -4,16 +4,16 @@ mod expr;
 pub mod ops;
 mod value;
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use ahash::AHashMap;
 pub use approx::Approx;
 pub use die::Die;
 use thiserror::Error;
 pub use value::{ComputableValue, ComputedValue, DefaultValue, OrderedValue, Value};
 
 type Outcome = u128;
-type Map<T> = BTreeMap<T, Outcome>;
+type Map<T> = AHashMap<T, Outcome>;
 type Ptr<T> = Arc<T>;
 type Result<T> = ::core::result::Result<T, Error>;
 
